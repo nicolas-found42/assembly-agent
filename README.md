@@ -2,13 +2,7 @@
 
 <p align="center">
   <img src="docs/demo.gif" width="900" alt="Typing 'what are the 5 latest AI models on openrouter' → NVIDIA Nemotron 3.5 Lightning streams table with web_search fan-out" />
-  <br/>
-  <em>“what are the 5 latest AI models on openrouter” on <code>nvidia/nemotron-3.5-lightning:free</code> — 2× retina, model picker + web_search fan-out + inspector</em>
-  <br/>
-  <a href="docs/demo.mp4">MP4 fallback (0.9MB, true color)</a> · 900×668 · 14s · 15fps · 1.5MB
 </p>
-
-> Hand-written WebAssembly Text engine. OpenRouter streaming. Parallel `web_search` fan-out. No bundler, no `package.json`.
 
 ---
 
