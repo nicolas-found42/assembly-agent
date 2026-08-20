@@ -39,7 +39,7 @@ assert.equal(shouldUseProxy(null, 'x:free'), true, 'null key treated anon');
 
 // ——— proxyUrl default + override ———
 delete global.localStorage._s['asm.proxyUrl'];
-assert.equal(proxyUrl(), '/api/chat', 'default proxy url');
+assert.equal(proxyUrl(), 'https://asm-agent-proxy.nicolas-6d9.workers.dev/api/chat', 'default proxy url');
 global.localStorage._s['asm.proxyUrl'] = 'https://proxy.example/api/chat';
 assert.equal(proxyUrl(), 'https://proxy.example/api/chat', 'override via localStorage');
 

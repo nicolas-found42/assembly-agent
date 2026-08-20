@@ -117,7 +117,7 @@ export function stop() { if (aborter) aborter.abort(); }
 export const isFreeModel = (id) => typeof id === 'string' && id.endsWith(':free');
 export const proxyUrl = () => {
   try { const v = localStorage['asm.proxyUrl']; if (v) return v; } catch {}
-  return '/api/chat';
+  return 'https://asm-agent-proxy.nicolas-6d9.workers.dev/api/chat';
 };
 export const shouldUseProxy = (key, model) => !key && isFreeModel(model);
 
