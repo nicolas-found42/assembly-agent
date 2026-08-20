@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Expanded Results · ASM::AGENT</title>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
+<style>
+/* PROTOTYPE ONLY — throwaway styles, not for merge */
+body { overflow:auto; }
+#proto-layout { display:flex; flex-direction:column; min-height:100vh; }
+#proto-header { padding:14px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+#proto-header h1 { font-family:var(--font-display); font-size:22px; letter-spacing:2px; color:var(--amber-core); }
+#proto-header .sub { color:var(--amber-dim); font-size:12.5px; flex:1; min-width:240px; }
+#proto-controls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.proto-btn { font-family:var(--font-display); font-size:15px; letter-spacing:1px; padding:6px 10px; border:1px solid var(--border); background:transparent; color:var(--amber-mid); cursor:pointer; border-radius:3px; }
+.proto-btn:hover { color:var(--amber-bright); border-color:var(--amber-mid); }
+.proto-btn.on { color:var(--amber-core); border-color:var(--amber-mid); background:var(--panel); box-shadow:var(--glow); }
+#proto-main { display:flex; gap:18px; padding:18px 22px; flex:1; }
+#proto-sim { flex:1; min-width:0; max-width:900px; }
+#proto-state { width:360px; flex-shrink:0; position:sticky; top:18px; align-self:flex-start; }
+.state-card { border:1px dashed var(--amber-dim); border-radius:4px; padding:12px; background:rgba(255,176,0,0.03); }
+.state-card h3 { font-family:var(--font-display); font-size:16px; letter-spacing:1px; color:var(--amber-core); margin-bottom:8px; }
+.state-card pre { font-size:11px; line-height:1.5; white-space:pre-wrap; word-break:break-all; color:var(--amber-mid); max-height:60vh; overflow:auto; border:1px solid var(--border); padding:8px; border-radius:3px; background:var(--crt-bg); }
+.variant-label { font-family:var(--font-display); font-size:13px; color:var(--amber-dim); letter-spacing:1px; margin:10px 0 6px; }
+
+/* Variant A — grouped by source */
+.src-group { border:1px solid var(--border); border-radius:3px; margin:6px 0; overflow:hidden; }
+.src-head { display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--panel); cursor:pointer; user-select:none; font-family:var(--font-display); font-size:16px; letter-spacing:1px; color:var(--amber-bright); }
+.src-head:hover { background:rgba(255,176,0,0.09); }
+.src-head .arrow { display:inline-block; width:12px; text-align:center; transition:transform 0.15s; }
+.src-head.collapsed .arrow { transform:rotate(-90deg); }
+.src-head .ms { margin-left:auto; color:var(--amber-dim); font-size:13px; letter-spacing:0; font-family:var(--font-body); }
+.src-body { padding:6px 10px; border-top:1px dashed var(--border); }
+.src-body.collapsed { display:none; }
+.src-head.collapsed + .src-body { display:none; }
+
+/* Variant B — flat */
+.flat-hit { border-left:2px solid var(--border); padding:6px 10px; margin:6px 0; background:rgba(255,176,0,0.03); border-radius:2px; }
+.flat-hit .tag-chip { display:inline-block; border:1px solid var(--amber-mid); border-radius:3px; padding:1px 6px; font-size:11px; letter-spacing:0.5px; color:var(--amber-core); margin-right:8px; vertical-align:middle; font-family:var(--font-display); }
+.flat-hit .hit-title { color:var(--amber-bright); font-size:13px; }
+.flat-hit .snippet { color:var(--amber-dim); font-size:12.5px; margin-top:2px; }
+.flat-hit a { color:var(--amber-mid); font-size:12px; word-break:break-all; }
+
+/* Variant C — chip bar */
+.chip-bar { display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px; border-bottom:1px dashed var(--border); background:var(--panel); border-radius:3px 3px 0 0; }
+.chip { border:1px solid var(--border); border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px; font-family:var(--font-display); letter-spacing:0.5px; }
+.chip.ok { border-color:var(--amber-mid); color:var(--amber-core); background:rgba(255,176,0,0.08); }
+.chip.missed { border-color:var(--amber-dim); color:var(--amber-dim); opacity:0.85; text-decoration:line-through; }
+.chip.failed { border-color:var(--err); color:var(--err); background:rgba(255,106,61,0.08); }
+.chip.filtered { box-shadow:var(--glow); transform:scale(1.02); }
+.chip .count { font-size:11px; opacity:0.8; }
+.dedup-badge { margin-left:auto; font-size:12px; color:var(--amber-dim); align-self:center; font-family:var(--font-display); }
+.failure-toast { background:rgba(255,176,0,0.08); border:1px solid var(--amber-mid); border-radius:4px; padding:8px 10px; margin:8px 0; font-size:12.5px; color:var(--amber-bright); display:flex; align-items:center; gap:10px; }
+.failure-toast.failed { border-color:var(--err); background:rgba(255,106,61,0.09); color:var(--err); }
+.failure-toast .dismiss { margin-left:auto; cursor:pointer; border:none; background:transparent; color:inherit; font-size:16px; line-height:1; }
+
+/* Shared tool-card overrides for prototype */
+.tool-card { max-width:none; }
+.tool-card .tool-head { font-size:13px; }
+.tool-card .tool-status .missed { color:var(--amber-dim); }
+.tool-card .tool-status .failed { color:var(--err); }
+
+/* Floating switcher */
+#proto-switcher { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:14px; background:rgba(12,7,0,0.97); border:1px solid var(--amber-mid); border-radius:999px; padding:8px 14px; box-shadow:var(--glow), 0 8px 24px rgba(0,0,0,0.6); z-index:1000; font-family:var(--font-display); letter-spacing:1px; }
+#proto-switcher button { background:transparent; border:1px solid var(--border); color:var(--amber-mid); width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
+#proto-switcher button:hover { color:var(--amber-bright); border-color:var(--amber-mid); }
+#proto-switcher .label { min-width:210px; text-align:center; color:var(--amber-core); font-size:15px; }
+#proto-switcher .label small { display:block; color:var(--amber-dim); font-size:11px; letter-spacing:0; font-family:var(--font-body); }
+
+@media (max-width:1100px){ #proto-main{ flex-direction:column;} #proto-state{ width:auto; position:static;} }
+</style>
+</head>
+<body>
+<div id="crt-overlay" aria-hidden="true"><div class="scanlines"></div><div class="vignette"></div></div>
+<div id="proto-layout">
+  <div id="proto-header">
+    <h1>PROTOTYPE <span style="color:var(--amber-dim)">·</span> EXPANDED RESULTS</h1>
+    <span class="sub">Throwaway — 13 keyless Sources · grouped vs flat vs chip dashboard · ?variant=A|B|C · Issue #8 · <code>prototype/expanded-results.html</code></span>
+    <div id="proto-controls">
+      <button class="proto-btn" data-scenario="ok">ALL OK</button>
+      <button class="proto-btn on" data-scenario="partial">PARTIAL MISS</button>
+      <button class="proto-btn" data-scenario="failed">FULL FAIL</button>
+      <button class="proto-btn" data-scenario="dedup">DEDUP 2</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;display:inline-block;"></span>
+      <button class="proto-btn" id="btn-parallel" title="Toggle 2 parallel calls in same round">PARALLEL ×2</button>
+      <button class="proto-btn" id="btn-rounds" title="Toggle stacked rounds">2 ROUNDS</button>
+    </div>
+  </div>
+
+  <div id="proto-main">
+    <div id="proto-sim">
+      <!-- Variant containers injected by JS -->
+      <div id="variant-a" hidden></div>
+      <div id="variant-b" hidden></div>
+      <div id="variant-c" hidden></div>
+      <div id="variant-compare" hidden></div>
+      <div style="margin-top:22px;border-top:1px dashed var(--border);padding-top:10px;color:var(--amber-dim);font-size:12px;">
+        <strong style="color:var(--amber-mid)">How to judge:</strong> Flip variants with pill or ←→ keys. <strong>A</strong> is ADR 0005 (grouped weight, silent dedup, inline MISSED). <strong>B</strong> interleaves by mock relevance. <strong>C</strong> adds chip bar + tappable filters + dedup badge + dismissible toast. Pick header clicks, collapsed states, scroll budget. State dump on right is live — check <code>markdown.slice(0,12000)</code> and <code>failures[]</code>.
+      </div>
+    </div>
+    <div id="proto-state">
+      <div class="state-card">
+        <h3>LIVE STATE</h3>
+        <pre id="state-dump"></pre>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="proto-btn" id="btn-copy-state" style="flex:1;">COPY JSON</button>
+          <button class="proto-btn" id="btn-reroll" style="flex:1;">REROLL MS</button>
+        </div>
+        <div style="margin-top:12px;color:var(--amber-dim);font-size:11px;line-height:1.5;">
+          <div><strong style="color:var(--amber-mid)">Contract</strong>: <code>{ markdown, sources, failures, perSource[] }</code><br>markdown = grouped <code>fmt()</code> blocks <code>.join('').slice(0,12000)</code><br>perSource needed for <code>TAG · n hits · ms</code> headers — either parse markdown or return <code>perSource</code> (prototype uses latter).</div>
+          <div style="margin-top:8px;"><strong style="color:var(--amber-mid)">Failures</strong>: <code>timed()</code> → <code>failures[]</code> (retry once on Timeout/429). Partial = inline <code>MISSED</code>, zero = <code>FAILED</code>.</div>
+        </div>
+      </div>
+      <div class="state-card" style="margin-top:12px;">
+        <h3>SCENARIOS</h3>
+        <div style="font-size:12.5px;color:var(--amber-mid);line-height:1.6;">
+          <div><strong style="color:var(--amber-bright)">ALL OK</strong> — 11/13 ok, 0 failures, ~3 hits each.</div>
+          <div><strong style="color:var(--amber-bright)">PARTIAL MISS</strong> — 8 ok, MISSED: wikidata,gdelt,openalex — matches baseline 45%/50% tails.</div>
+          <div><strong style="color:var(--amber-bright)">FULL FAIL</strong> — 0 sources, FAILED: timeout,429 — zero-state banner.</div>
+          <div><strong style="color:var(--amber-bright)">DEDUP 2</strong> — 2 URLs overlap (WIKIPEDIA↔WIKIDATA), silent first-win, no counter (ADR).</div>
+          <div style="margin-top:6px;color:var(--amber-dim);">Toggle <strong>PARALLEL ×2</strong> for two Tool Cards per round, <strong>2 ROUNDS</strong> to stack verbatim and auto-collapse older round.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Floating switcher -->
+<div id="proto-switcher" role="toolbar" aria-label="Variant switcher">
+  <button id="sw-prev" title="Previous (←)">‹</button>
+  <div class="label"><span id="sw-label">A — Grouped Weight</span><small id="sw-desc">ADR 0005 · per-Source collapsible</small></div>
+  <button id="sw-next" title="Next (→)">›</button>
+</div>
+
+<script type="module">
+// Three variants of the 13-source Tool Card, switchable via ?variant= — prototype for #8
+// Question: "Can we make a cheap clickable prototype of the fused multi-source view so UX decisions can be felt?"
+// Variants: A grouped-weight (ADR chosen), B flat interleaved, C chip dashboard.
+
+const SOURCE_ORDER = [
+  'WIKIPEDIA','OPENALEX','WIKIDATA','CROSSREF','SEMANTIC SCHOLAR','DOAJ','OPEN LIBRARY','DBPEDIA','GDELT','LOBSTE.RS','HACKER NEWS','STACK OVERFLOW','GITHUB'
+];
+const VARIANTS = {
+  A: { name:'Grouped Weight', desc:'ADR 0005 · per-Source collapsible' },
+  B: { name:'Flat Interleaved', desc:'Relevance-sorted · tag chips' },
+  C: { name:'Chip Dashboard', desc:'Filter chips + dedup + toast' },
+};
+
+function fmt(tag, title, url, snippet){
+  let out = `### [${tag}] ${title}\n`;
+  if(url) out += `${url}\n`;
+  if(snippet) out += `${snippet}\n`;
+  return out + '\n';
+}
+function seededMs(tag){ // deterministic-ish given tag
+  let h=0; for(let i=0;i<tag.length;i++) h = (h*31 + tag.charCodeAt(i))>>>0;
+  return 80 + (h % 340);
+}
+function genHits(tag, query, n){
+  const titles = {
+    'WIKIPEDIA': [`${query} — Wikipedia`, `${query} history`, `${query} applications`],
+    'WIKIDATA': [`${query} (Q123)`, `${query} related entity`],
+    'OPENALEX': [`OpenAlex: ${query} — 2024 review`, `${query} landscape`],
+    'CROSSREF': [`Crossref: ${query} DOI 10.xxxx`],
+    'SEMANTIC SCHOLAR': [`Semantic Scholar: ${query} citation graph`, `${query} influential paper`],
+    'DOAJ': [`DOAJ: ${query} open access`],
+    'OPEN LIBRARY': [`Open Library: ${query} — book`],
+    'DBPEDIA': [`DBpedia: ${query} resource`],
+    'GDELT': [`GDELT: ${query} news burst`],
+    'LOBSTE.RS': [`Lobste.rs: ${query} discussion`],
+    'HACKER NEWS': [`HN: ${query} Show HN`, `HN: ${query} comments`],
+    'STACK OVERFLOW': [`SO: ${query} question`, `SO: ${query} accepted answer`],
+    'GITHUB': [`github: ${query.replace(/\s+/g,'-')}/awesome`, `github: ${query} toolkit`],
+  };
+  const base = titles[tag] || [`${tag}: ${query}`];
+  return Array.from({length:n}, (_,i)=>{
+    const t = base[i % base.length] + (n>base.length? ` #${i+1}`:'');
+    const url = tag==='WIKIPEDIA' ? `https://en.wikipedia.org/wiki/${encodeURIComponent(query.replace(/\s+/g,'_'))}`
+      : tag==='GITHUB' ? `https://github.com/search?q=${encodeURIComponent(query)}`
+      : `https://${tag.toLowerCase().replace(/[^a-z0-9]+/g,'')}.example/${encodeURIComponent(query)}/${i+1}`;
+    return { title:t, url, snippet:`Snippet for ${t} — ${query} context, ${tag} provenance, 220 chars truncated for tool-src display. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.` .slice(0,220) };
+  });
+}
+
+// Build perSource given scenario
+let scenario = 'partial';
+let parallel = false;
+let twoRounds = false;
+
+function buildPerSource(query, scenarioName){
+  let failures = [];
+  let perSource = SOURCE_ORDER.map(tag=>{
+    let n = 2 + (tag.length % 3); // 2-4 hits
+    let ms = seededMs(tag) + Math.floor(Math.random()*40);
+    let status='ok';
+    if(scenarioName==='ok'){
+      // occasional 0 hits but not failure
+      if(tag==='GDELT' || tag==='DOAJ') n = 1;
+    } else if(scenarioName==='partial'){
+      if(['WIKIDATA','GDELT','OPENALEX'].includes(tag)){ status='missed'; failures.push(tag.toLowerCase().replace(/\s+/g,'')); return { tag, ms, hits:[], status, hitCount:0 }; }
+      if(tag==='GDELT') n=0;
+    } else if(scenarioName==='failed'){
+      status='missed'; failures.push(tag.toLowerCase());
+      return { tag, ms: 8000, hits:[], status, hitCount:0 };
+    } else if(scenarioName==='dedup'){
+      // will duplicate one URL later
+    }
+    if(tag==='SEMANTIC SCHOLAR' && scenarioName==='partial') n=1;
+    const hits = genHits(tag, query, n);
+    return { tag, ms, hits, status, hitCount:hits.length };
+  });
+  if(scenarioName==='failed'){
+    return { perSource: perSource.map(s=>({...s, hits:[], hitCount:0})), failures: perSource.map(s=>s.tag.toLowerCase()) };
+  }
+  if(scenarioName==='dedup'){
+    // force duplicate URL between WIKIPEDIA first hit and WIKIDATA first hit
+    const wp = perSource.find(s=>s.tag==='WIKIPEDIA');
+    const wd = perSource.find(s=>s.tag==='WIKIDATA');
+    if(wp && wd && wp.hits[0] && wd.hits[0]){
+      wd.hits[0].url = wp.hits[0].url; // duplicate
+    }
+    // dedup silent first-win happens later when building deduped markdown
+  }
+  // Filter out missed to get failures array consistent
+  if(scenarioName==='partial'){
+    failures = ['wikidata','gdelt','openalex'];
+    perSource = perSource.map(s=>{
+      if(failures.includes(s.tag.toLowerCase().replace(/\s+/g,'').replace('semantic','semantic'))) {
+        // keep as missed but hits empty
+      }
+      return s;
+    });
+  }
+  // For other scenarios clean failures
+  if(scenarioName==='ok') failures=[];
+  if(scenarioName==='dedup') failures=[];
+  return { perSource, failures };
+}
+
+function buildToolCalls(){
+  const queries = parallel
+    ? ["WASM SIMD", "CRISPR prime editing"]
+    : twoRounds
+      ? null // handled outside
+      : ["WASM SIMD"];
+  // single round or parallel
+  if(!twoRounds){
+    const qlist = queries;
+    return qlist.map(q=>{
+      const { perSource, failures } = buildPerSource(q, scenario);
+      // dedupe
+      const seen = new Set();
+      const norm = u => String(u||'').replace(/^https?:\/\//,'').replace(/\/+$/,'').toLowerCase();
+      let dedupHits=0;
+      const dedupedPerSource = perSource.map(ps=>{
+        const filteredHits = ps.hits.filter(h=>{
+          const n = norm(h.url);
+          if(seen.has(n)){ dedupHits++; return false; }
+          if(n) seen.add(n);
+          return true;
+        });
+        return { ...ps, hits: filteredHits, hitCount: filteredHits.length };
+      }).filter(ps=> ps.hits.length>0);
+      const markdown = dedupedPerSource.map(ps=> ps.hits.map(h=> fmt(ps.tag, h.title, h.url, h.snippet)).join('')).join('').slice(0,12000);
+      const sources = dedupedPerSource.reduce((s,ps)=> s+ps.hitCount, 0); // total blocks after dedup
+      const sourceGroups = dedupedPerSource.length;
+      return { query:q, perSource: dedupedPerSource, failures, markdown, sources, sourceGroups, dedupHits, rawPerSource: perSource };
+    });
+  } else {
+    // two rounds stacked
+    const round1 = buildPerSource("WASM SIMD", scenario);
+    const round2 = buildPerSource("Kubernetes sidecar", scenario==='partial' ? 'ok' : scenario);
+    const mk = (q, data)=>{
+      const seen=new Set(); let dedupHits=0;
+      const norm=u=>String(u||'').replace(/^https?:\/\//,'').replace(/\/+$/,'').toLowerCase();
+      const deduped = data.perSource.map(ps=>{
+        const fh = ps.hits.filter(h=>{ const n=norm(h.url); if(seen.has(n)){dedupHits++;return false;} if(n) seen.add(n); return true;});
+        return {...ps, hits:fh, hitCount:fh.length};
+      }).filter(ps=>ps.hits.length>0);
+      const markdown = deduped.map(ps=>ps.hits.map(h=>fmt(ps.tag,h.title,h.url,h.snippet)).join('')).join('').slice(0,12000);
+      return { query:q, perSource:deduped, failures:data.failures, markdown, sources:deduped.reduce((s,p)=>s+p.hitCount,0), sourceGroups:deduped.length, dedupHits, rawPerSource:data.perSource };
+    };
+    return [mk("WASM SIMD", round1), mk("Kubernetes sidecar", round2)];
+  }
+}
+
+// Rendering helpers
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!==undefined) e.innerHTML=html; return e; }
+
+function renderToolCardHeader(query, sources, sourceGroups, failures, roundIdx){
+  const failed = sourceGroups===0 || sources===0;
+  let status='';
+  if(failed){ status = `<span class="failed">FAILED: ${(failures||[]).join(', ')||'no sources'}</span>`; }
+  else { status = `${sourceGroups} SOURCES · ${sources} hits${failures?.length? ` <span class="missed">· MISSED: ${failures.join(',')}</span>`:''}`; }
+  return `<div class="tool-head"><span>▶ web_search("${query}")</span><span class="tool-status">${status}</span></div>`;
+}
+
+function renderVariantA(container, toolCalls){
+  container.innerHTML='';
+  toolCalls.forEach((tc, idx)=>{
+    const isOlder = twoRounds && idx===0;
+    const card = el('div', 'tool-card' + (isOlder ? ' collapsed' : ''));
+    card.innerHTML = renderToolCardHeader(tc.query, tc.sources, tc.sourceGroups, tc.failures, idx) + `<div class="tool-body"></div>`;
+    const body = card.querySelector('.tool-body');
+    if(tc.sourceGroups===0){
+      const empty = el('div', '', `<div style="color:var(--err);padding:8px;">No sources returned. <code>failures: [${tc.failures.join(', ')}]</code> — full banner replaces count.</div>`);
+      body.appendChild(empty);
+    } else {
+      tc.perSource.forEach((ps, i)=>{
+        const grp = el('div','src-group');
+        const head = el('div','src-head' + (i>1 ? ' collapsed' : ''), `<span class="arrow">▼</span> ${ps.tag} · ${ps.hitCount} hit${ps.hitCount===1?'':'s'} <span class="ms">· ${ps.ms}ms</span>`);
+        const b = el('div','src-body' + (i>1 ? ' collapsed' : ''));
+        ps.hits.forEach(h=>{
+          const row = el('div','tool-src');
+          row.innerHTML = `<span class="tag">[${ps.tag}]</span> <a href="${h.url}" target="_blank" rel="noopener">${h.url}</a><div class="snippet"></div>`;
+          row.querySelector('.snippet').textContent = h.snippet.slice(0,220);
+          // prepend title as bold line
+          const title = el('div','', `<strong style="color:var(--amber-bright)">${h.title}</strong>`);
+          row.insertBefore(title, row.querySelector('.snippet'));
+          b.appendChild(row);
+        });
+        head.addEventListener('click', ()=>{ head.classList.toggle('collapsed'); b.classList.toggle('collapsed'); });
+        grp.appendChild(head); grp.appendChild(b);
+        body.appendChild(grp);
+      });
+      if(tc.dedupHits){
+        const note = el('div','', `<div style="color:var(--amber-dim);font-size:11px;margin-top:6px;">DEDUP silent: ${tc.dedupHits} duplicate URL(s) dropped (first-win, no counter in ADR — shown here for debug).</div>`);
+        body.appendChild(note);
+      }
+    }
+    card.querySelector('.tool-head').addEventListener('click', ()=> card.classList.toggle('collapsed'));
+    container.appendChild(card);
+    if(isOlder){
+      const lbl = el('div','variant-label','ROUND 1 — auto-collapsed (older round) — click header to expand');
+      container.appendChild(lbl);
+    }
+  });
+  // add round label logic for parallel
+  if(parallel && !twoRounds){
+    const note = el('div','variant-label','One Tool Round with 2 parallel calls → two stacked Tool Cards in round order (878ec46).');
+    container.prepend(note);
+  }
+}
+
+function renderVariantB(container, toolCalls){
+  container.innerHTML='';
+  toolCalls.forEach((tc, idx)=>{
+    const isOlder = twoRounds && idx===0;
+    const card = el('div','tool-card' + (isOlder ? ' collapsed' : ''));
+    card.innerHTML = renderToolCardHeader(tc.query, tc.sources, tc.sourceGroups, tc.failures, idx) + `<div class="tool-body"></div>`;
+    const body = card.querySelector('.tool-body');
+    // toast for failures in B is a banner, not inline
+    if(tc.failures?.length){
+      const toast = el('div','failure-toast', `⚠ MISSED ${tc.failures.length} sources: ${tc.failures.join(', ')} — partial failure is normal (baseline p50).`);
+      body.appendChild(toast);
+    }
+    if(tc.sourceGroups===0){
+      body.appendChild(el('div','failure-toast failed', `FAILED — no sources. ${tc.failures.join(', ')}`));
+    } else {
+      // flatten and interleave by mock relevance: shuffle perSource hits
+      const flat = [];
+      tc.perSource.forEach(ps=> ps.hits.forEach(h=> flat.push({ tag:ps.tag, ms:ps.ms, ...h, relevance: Math.random() })));
+      flat.sort((a,b)=> b.relevance - a.relevance);
+      flat.forEach(h=>{
+        const row = el('div','flat-hit');
+        row.innerHTML = `<span class="tag-chip">${h.tag}</span><span class="hit-title">${h.title}</span><div><a href="${h.url}" target="_blank" rel="noopener">${h.url}</a> <span style="color:var(--amber-dim);font-size:11px;">· ${h.ms}ms</span></div><div class="snippet">${h.snippet.slice(0,220)}</div>`;
+        body.appendChild(row);
+      });
+      body.appendChild(el('div','', `<div style="color:var(--amber-dim);font-size:11px;margin-top:8px;">Flat interleaved: ${flat.length} hits sorted by mock relevance, chips inline — contrasts with A's grouped weight.</div>`));
+    }
+    card.querySelector('.tool-head').addEventListener('click', ()=> card.classList.toggle('collapsed'));
+    container.appendChild(card);
+  });
+}
+
+function renderVariantC(container, toolCalls){
+  container.innerHTML='';
+  let activeFilter = null; // tag or null
+
+  function draw(){
+    container.innerHTML='';
+    toolCalls.forEach((tc, idx)=>{
+      const isOlder = twoRounds && idx===0;
+      const card = el('div','tool-card' + (isOlder ? ' collapsed' : ''));
+      // chip bar
+      const bar = el('div','chip-bar');
+      const allTags = SOURCE_ORDER;
+      allTags.forEach(tag=>{
+        const ps = tc.perSource.find(p=>p.tag===tag);
+        const isOk = !!ps;
+        const isMissed = !isOk && tc.failures.map(f=>f.toUpperCase()).includes(tag.replace(/\s+/g,'').toUpperCase()) || (!isOk && !tc.failures.length && Math.random()<0.2);
+        // Determine actual missed set from tc.failures
+        const failedSet = new Set(tc.failures.map(f=>f.toLowerCase()));
+        // normalize tag for check
+        const normTag = tag.toLowerCase().replace(/\s+/g,'').replace('semantic','semanticscholar').replace('open','open').replace('stack','stack').replace('hacker','hacker');
+        // simplified: just check if tag in failures raw
+        const isInFailures = tc.failures.some(f=> tag.toLowerCase().includes(f) || f.includes(tag.toLowerCase().split(' ')[0]) );
+        let cls='chip ';
+        let count='';
+        if(ps){ cls+='ok'; count = `${ps.hitCount}`; }
+        else if(isInFailures) cls+='missed';
+        else cls+='missed';
+        if(activeFilter===tag) cls+=' filtered';
+        const chip = el('div', cls, `${tag} <span class="count">${count || '—'}</span>`);
+        chip.addEventListener('click', ()=>{ activeFilter = activeFilter===tag ? null : tag; draw(); });
+        bar.appendChild(chip);
+      });
+      const dedupBadge = el('span','dedup-badge', tc.dedupHits? `DEDUP ${tc.dedupHits}` : `DEDUP 0`);
+      bar.appendChild(dedupBadge);
+
+      card.innerHTML = renderToolCardHeader(tc.query, tc.sources, tc.sourceGroups, tc.failures, idx);
+      card.appendChild(bar);
+      const body = el('div','tool-body');
+      // failure toast dismissible
+      if(tc.failures?.length){
+        const toast = el('div', tc.sourceGroups===0?'failure-toast failed':'failure-toast', tc.sourceGroups===0? `FAILED: ${tc.failures.join(', ')} — zero sources` : `MISSED: ${tc.failures.join(', ')} <span style="color:var(--amber-dim)">· tap chip to filter</span>`);
+        const dismiss = el('button','dismiss','×');
+        dismiss.addEventListener('click', ()=> toast.remove());
+        toast.appendChild(dismiss);
+        body.appendChild(toast);
+      }
+      if(tc.sourceGroups===0){
+        body.appendChild(el('div','', `<div style="padding:8px;color:var(--err)">No hits — card shows zero state.</div>`));
+      } else {
+        let toShow = tc.perSource;
+        if(activeFilter) toShow = toShow.filter(ps=>ps.tag===activeFilter);
+        toShow.forEach((ps, i)=>{
+          const grp = el('div','src-group');
+          const head = el('div','src-head', `<span class="arrow">▼</span> ${ps.tag} · ${ps.hitCount} hits <span class="ms">· ${ps.ms}ms</span>`);
+          const b = el('div','src-body');
+          ps.hits.forEach(h=>{
+            const row = el('div','tool-src');
+            row.innerHTML = `<strong style="color:var(--amber-bright)">${h.title}</strong><br><a href="${h.url}" target="_blank" rel="noopener">${h.url}</a><div class="snippet"></div>`;
+            row.querySelector('.snippet').textContent=h.snippet.slice(0,220);
+            b.appendChild(row);
+          });
+          head.addEventListener('click', ()=>{ head.classList.toggle('collapsed'); b.classList.toggle('collapsed'); });
+          grp.appendChild(head); grp.appendChild(b);
+          body.appendChild(grp);
+        });
+        if(activeFilter && toShow.length===0){
+          body.appendChild(el('div','', `<div style="padding:8px;color:var(--amber-dim)">No hits for filter ${activeFilter}.</div>`));
+        }
+      }
+      card.appendChild(body);
+      card.querySelector('.tool-head').addEventListener('click', ()=> card.classList.toggle('collapsed'));
+      container.appendChild(card);
+      if(parallel && idx===0){
+        // no extra
+      }
+    });
+    // update state dump after draw
+    updateStateDump();
+  }
+  draw();
+}
+
+// URL variant handling
+function currentVariant(){
+  const v = new URLSearchParams(location.search).get('variant');
+  const up = (v||'A').toUpperCase();
+  return VARIANTS[up] ? up : 'A';
+}
+function setVariant(v){
+  const url = new URL(location.href);
+  url.searchParams.set('variant', v);
+  history.replaceState(null,'',url);
+  render();
+}
+let toolCallsCache = null;
+function updateStateDump(){
+  const dump = document.getElementById('state-dump');
+  if(!toolCallsCache) return;
+  const summary = {
+    variant: currentVariant(),
+    scenario,
+    parallel,
+    twoRounds,
+    toolCalls: toolCallsCache.map(tc=>({
+      query: tc.query,
+      sources: tc.sources,
+      sourceGroups: tc.sourceGroups,
+      failures: tc.failures,
+      dedupHits: tc.dedupHits,
+      perSource: tc.perSource.map(ps=>({tag:ps.tag, hits:ps.hitCount, ms:ps.ms})),
+      markdownBytes: tc.markdown.length,
+      markdownPreview: tc.markdown.slice(0,400) + (tc.markdown.length>400?'…':''),
+    })),
+    note: 'markdown = deduped.join("").slice(0,12000); perSource hitCount + ms drives TAG · n hits · ms headers',
+  };
+  dump.textContent = JSON.stringify(summary, null, 2);
+}
+
+function render(){
+  const v = currentVariant();
+  document.querySelectorAll('#variant-a,#variant-b,#variant-c').forEach(el=> el.hidden=true);
+  const target = {A:'variant-a',B:'variant-b',C:'variant-c'}[v];
+  const container = document.getElementById(target);
+  container.hidden=false;
+  // update switcher label
+  document.getElementById('sw-label').textContent = `${v} — ${VARIANTS[v].name}`;
+  document.getElementById('sw-desc').textContent = VARIANTS[v].desc;
+  // generate fresh toolCalls per scenario (keeps ms stable unless reroll)
+  toolCallsCache = buildToolCalls();
+
+  if(v==='A') renderVariantA(container, toolCallsCache);
+  else if(v==='B') renderVariantB(container, toolCallsCache);
+  else if(v==='C') renderVariantC(container, toolCallsCache);
+
+  // keep scenario buttons in sync
+  document.querySelectorAll('[data-scenario]').forEach(b=> b.classList.toggle('on', b.dataset.scenario===scenario));
+  document.getElementById('btn-parallel').classList.toggle('on', parallel);
+  document.getElementById('btn-rounds').classList.toggle('on', twoRounds);
+
+  if(v!=='C') updateStateDump();
+}
+
+// Controls
+document.querySelectorAll('[data-scenario]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{ scenario=btn.dataset.scenario; // dedup scenario needs reroll
+    // ensure twoRounds/parallel combos sane
+    render();
+  });
+});
+document.getElementById('btn-parallel').addEventListener('click', ()=>{
+  parallel=!parallel;
+  if(parallel) twoRounds=false;
+  render();
+});
+document.getElementById('btn-rounds').addEventListener('click', ()=>{
+  twoRounds=!twoRounds;
+  if(twoRounds) parallel=false;
+  render();
+});
+document.getElementById('btn-reroll').addEventListener('click', ()=> render());
+document.getElementById('btn-copy-state').addEventListener('click', ()=>{
+  const txt = document.getElementById('state-dump').textContent;
+  navigator.clipboard.writeText(txt).then(()=>{ const b=document.getElementById('btn-copy-state'); const old=b.textContent; b.textContent='COPIED'; setTimeout(()=>b.textContent=old,1200); });
+});
+// Switcher
+document.getElementById('sw-prev').addEventListener('click', ()=>{
+  const order=['A','B','C']; const cur=currentVariant(); const i=order.indexOf(cur); setVariant(order[(i-1+order.length)%order.length]);
+});
+document.getElementById('sw-next').addEventListener('click', ()=>{
+  const order=['A','B','C']; const cur=currentVariant(); const i=order.indexOf(cur); setVariant(order[(i+1)%order.length]);
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.target.matches('input,textarea,[contenteditable]')) return;
+  if(e.key==='ArrowLeft'){ document.getElementById('sw-prev').click(); }
+  if(e.key==='ArrowRight'){ document.getElementById('sw-next').click(); }
+});
+
+// Initial
+render();
+
+// Expose for console tinkering
+window.__proto = { buildPerSource, buildToolCalls, render, SOURCE_ORDER };
+</script>
+</body>
+</html>
