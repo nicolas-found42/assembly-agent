@@ -435,6 +435,11 @@ async function doSend() {
   setBusy(true);
 
   let body = null, acc = '', raf = 0;
+  // A tool-only round streams no prose; drop its placeholder rather than
+  // leaving an empty AGENT bubble above the tool card.
+  const dropIfEmpty = () => {
+    if (body && !body.textContent.trim()) body.closest('.msg')?.remove();
+  };
   const paint = () => {
     raf = 0;
     if (!body) return;
@@ -446,6 +451,8 @@ async function doSend() {
 
   await send(text, {
     onRoundStart() {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      dropIfEmpty();
       body = addMsg('assistant', 'AGENT ▸');
       acc = '';
       resetRender();
@@ -474,7 +481,8 @@ async function doSend() {
       addErrorCard(msg);
     },
     onDone() {
-      if (raf) cancelAnimationFrame(raf);
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      dropIfEmpty();
       body?.classList.remove('cursor-blink');
       sfxDone();
       setBusy(false);
