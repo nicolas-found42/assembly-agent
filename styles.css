@@ -203,6 +203,15 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
 @keyframes spinframes { 0% { content: '▖'; } 25% { content: '▘'; } 50% { content: '▝'; } 75% { content: '▗'; } }
 .tool-body { padding: 6px 12px 10px; border-top: 1px dashed var(--border); font-size: 12.5px; }
 .tool-card.collapsed .tool-body { display: none; }
+.src-group { border: 1px solid var(--border); border-radius: 3px; margin: 6px 0; overflow: hidden; }
+.src-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); cursor: pointer; user-select: none; font-family: var(--font-display); font-size: 16px; letter-spacing: 1px; color: var(--amber-bright); }
+.src-head:hover { background: rgba(255,176,0,0.09); }
+.src-head .arrow { display: inline-block; width: 12px; text-align: center; transition: transform 0.15s; }
+.src-head.collapsed .arrow { transform: rotate(-90deg); }
+.src-head .ms { margin-left: auto; color: var(--amber-dim); font-size: 13px; letter-spacing: 0; font-family: var(--font-body); }
+.src-body { padding: 6px 10px; border-top: 1px dashed var(--border); }
+.src-body.collapsed { display: none; }
+.src-head.collapsed + .src-body { display: none; }
 .tool-src { margin: 6px 0; }
 .tool-src .tag {
   font-family: var(--font-display); font-size: 14px; color: var(--amber-core);

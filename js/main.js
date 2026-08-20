@@ -232,9 +232,6 @@ function buildSettings() {
         </div>
         <div class="set-hint" style="font-size:11px;opacity:.7;margin-top:4px">Free models (<code>:free</code>) work without a key via the Proxy. Paid models need your own key.</div>
       </div>
-      <div class="set-field"><label>TAVILY KEY (OPTIONAL)</label><input type="password" class="set-tavily" placeholder="tvly-…"></div>
-      <div class="set-field"><label>BRAVE KEY (OPTIONAL)</label><input type="password" class="set-brave" placeholder="BSA…"></div>
-      <div class="set-field"><label>JINA KEY (OPTIONAL)</label><input type="password" class="set-jina" placeholder="jina_…"></div>
       <div class="set-field"><label>CRT</label>
         <div class="set-crt-row">
           <button class="pill crt-t" data-k="scan">SCAN</button>
@@ -250,25 +247,18 @@ function buildSettings() {
   const load = () => {
     settings = S.loadSettings();
     el.querySelector('.set-key').value = settings.key || '';
-    el.querySelector('.set-tavily').value = settings.tavily || '';
-    el.querySelector('.set-brave').value = settings.brave || '';
-    el.querySelector('.set-jina').value = settings.jina || '';
     el.querySelectorAll('.crt-t').forEach((b) => b.classList.toggle('on', !!settings.crt?.[b.dataset.k]));
   };
   load();
 
   const save = () => {
     settings.key = el.querySelector('.set-key').value.trim();
-    settings.tavily = el.querySelector('.set-tavily').value.trim();
-    settings.brave = el.querySelector('.set-brave').value.trim();
-    settings.jina = el.querySelector('.set-jina').value.trim();
     S.saveSettings(settings);
     // Q12 B: if Anonymous, ensure active model is Free and button reflects it
     try { if (!settings.key) getActiveModel(); } catch {}
     try { refreshModelButton(); } catch {}
   };
-  for (const cls of ['set-key', 'set-tavily', 'set-brave', 'set-jina'])
-    el.querySelector(`.${cls}`).addEventListener('change', save);
+  el.querySelector('.set-key').addEventListener('change', save);
 
   el.querySelector('.set-show').addEventListener('click', (ev) => {
     const inp = el.querySelector('.set-key');
@@ -335,7 +325,8 @@ function addErrorCard(text) {
   body.textContent = text;
 }
 
-// tool accordion card
+
+// tool accordion card — grouped by Source weight, per-Source collapsible headers (ADR 0005)
 function addToolCard(name, args) {
   const card = document.createElement('div');
   card.className = 'tool-card';
@@ -356,17 +347,80 @@ function addToolCard(name, args) {
         st.textContent = `${result.sources} SOURCES${result.failures?.length ? ` · MISSED: ${result.failures.join(',')}` : ''}`;
       }
       bodyEl.innerHTML = '';
-      for (const block of result.markdown.split(/(?=### \[)/)) {
-        const m = block.match(/^### \[([^\]]+)\] (.+)\n(\S*)\n?([\s\S]*)$/);
-        if (!m) continue;
-        const div = document.createElement('div');
-        div.className = 'tool-src';
-        const a = m[3] ? `<a href="${m[3]}" target="_blank" rel="noopener">${m[3]}</a>` : '';
-        div.innerHTML = `<span class="tag">${m[1]}</span>${a}<div class="snippet"></div>`;
-        div.querySelector('.snippet').textContent = m[4].slice(0, 220);
-        bodyEl.appendChild(div);
+      // Grouped rendering when perSource present (13-source fan-out)
+      if (result.perSource && result.perSource.length) {
+        const msMap = new Map(result.perSource.map((ps) => [ps.tag, ps.ms]));
+        const groups = [];
+        let cur = null;
+        for (const block of result.markdown.split(/(?=### \[)/)) {
+          const m = block.match(/^### \[([^\]]+)\] (.+)\n(\S*)\n?([\s\S]*)$/);
+          if (!m) continue;
+          const tag = m[1];
+          if (!cur || cur.tag !== tag) {
+            cur = { tag, ms: msMap.get(tag) ?? 0, hits: [] };
+            groups.push(cur);
+          }
+          cur.hits.push({ title: m[2], url: m[3], snippet: m[4] });
+        }
+        if (!groups.length && result.sources === 0) {
+          bodyEl.innerHTML = `<div style="color:var(--err);padding:8px;">No sources returned. <code>failures: [${(result.failures || []).join(', ')}]</code></div>`;
+        } else {
+          for (let i = 0; i < groups.length; i++) {
+            const g = groups[i];
+            const grp = document.createElement('div');
+            grp.className = 'src-group';
+            const head = document.createElement('div');
+            head.className = 'src-head' + (i > 1 ? ' collapsed' : '');
+            head.innerHTML = `<span class="arrow">▼</span> ${g.tag} · ${g.hits.length} hit${g.hits.length === 1 ? '' : 's'} <span class="ms">· ${g.ms}ms</span>`;
+            const body = document.createElement('div');
+            body.className = 'src-body' + (i > 1 ? ' collapsed' : '');
+            for (const h of g.hits) {
+              const div = document.createElement('div');
+              div.className = 'tool-src';
+              const titleDiv = document.createElement('div');
+              titleDiv.className = 'hit-title';
+              titleDiv.style.color = 'var(--amber-bright)';
+              titleDiv.style.fontSize = '13px';
+              titleDiv.style.marginBottom = '2px';
+              titleDiv.textContent = h.title;
+              div.appendChild(titleDiv);
+              const tagSpan = document.createElement('span');
+              tagSpan.className = 'tag';
+              tagSpan.textContent = `[${g.tag}]`;
+              div.appendChild(tagSpan);
+              if (h.url) {
+                div.appendChild(document.createTextNode(' '));
+                const aEl = document.createElement('a');
+                aEl.href = h.url;
+                aEl.target = '_blank';
+                aEl.rel = 'noopener';
+                aEl.textContent = h.url;
+                div.appendChild(aEl);
+              }
+              const snippetDiv = document.createElement('div');
+              snippetDiv.className = 'snippet';
+              snippetDiv.textContent = h.snippet.slice(0, 220);
+              div.appendChild(snippetDiv);
+              body.appendChild(div);
+            }
+            head.addEventListener('click', () => { head.classList.toggle('collapsed'); body.classList.toggle('collapsed'); });
+            grp.appendChild(head);
+            grp.appendChild(body);
+            bodyEl.appendChild(grp);
+          }
+        }
+      } else {
+        for (const block of result.markdown.split(/(?=### \[)/)) {
+          const m = block.match(/^### \[([^\]]+)\] (.+)\n(\S*)\n?([\s\S]*)$/);
+          if (!m) continue;
+          const div = document.createElement('div');
+          div.className = 'tool-src';
+          const a = m[3] ? `<a href="${m[3]}" target="_blank" rel="noopener">${m[3]}</a>` : '';
+          div.innerHTML = `<span class="tag">${m[1]}</span>${a}<div class="snippet"></div>`;
+          div.querySelector('.snippet').textContent = m[4].slice(0, 220);
+          bodyEl.appendChild(div);
+        }
       }
-      // collapse when done
       card.classList.add('collapsed');
     },
   };

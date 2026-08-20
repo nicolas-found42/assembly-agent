@@ -86,8 +86,8 @@ export function setSystemPrompt(id, preset, text) {
 
 // ── settings ────────────────────────────────────────────────────────────
 export function loadSettings() {
-  try { return { key: '', tavily: '', brave: '', jina: '', crt: { scan: true, curve: true, flicker: false, sound: false }, ...JSON.parse(localStorage[K_SETTINGS] || '{}') }; }
-  catch { return { key: '', tavily: '', brave: '', jina: '', crt: { scan: true, curve: true, flicker: false, sound: false } }; }
+  try { return { key: '', crt: { scan: true, curve: true, flicker: false, sound: false }, ...JSON.parse(localStorage[K_SETTINGS] || '{}') }; }
+  catch { return { key: '', crt: { scan: true, curve: true, flicker: false, sound: false } }; }
 }
 export function saveSettings(s) { localStorage[K_SETTINGS] = JSON.stringify(s); }
 

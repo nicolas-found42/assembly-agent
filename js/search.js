@@ -1,5 +1,6 @@
 // search.js — parallel fan-out meta-search (keyless-first, spread load).
 // Every source is failure-tolerant: a failure simply omits that block.
+// ADR 0004: 12 keyless Sources (4 existing + 8 P0: GDELT dropped — 17s timeout breaks 8s SLO), DDG + keyed dropped, grouped by Source weight, dedup norm(url), 12k slice, retry once on Timeout/429.
 
 const TIMEOUT = 8000;
 
@@ -13,17 +14,32 @@ function fmt(tag, title, url, snippet) {
 const stripTags = (s) => String(s || '').replace(/<[^>]*>/g, '').trim();
 const norm = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
 
+// timed with one retry after ~1s for Timeout (AbortError) and 429 only.
+// Other errors push to failures immediately. Failure-tolerant: never throws.
 async function timed(name, fn, failures) {
-  try {
+  for (let attempt = 0; attempt < 2; attempt++) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), TIMEOUT);
-    const r = await fn(ctl.signal);
-    clearTimeout(t);
-    return r;
-  } catch {
-    failures.push(name);
-    return null;
+    try {
+      const r = await fn(ctl.signal);
+      clearTimeout(t);
+      return r;
+    } catch (e) {
+      clearTimeout(t);
+      const msg = String(e && e.message || e || '');
+      const isAbort = e && e.name === 'AbortError';
+      const is429 = msg.includes('429') || msg.includes('Too Many Requests');
+      const retryable = isAbort || is429;
+      if (attempt === 0 && retryable) {
+        await new Promise((res) => setTimeout(res, 1000));
+        continue;
+      }
+      failures.push(name);
+      return null;
+    }
   }
+  failures.push(name);
+  return null;
 }
 
 async function jfetch(url, opts = {}) {
@@ -47,16 +63,6 @@ async function hackernews(q, sig) {
       `${h.points || 0} points · ${h.num_comments || 0} comments`)).join('');
 }
 
-async function duckduckgo(q, sig) {
-  const u = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`;
-  const j = await jfetch(u, { signal: sig });
-  let out = '';
-  if (j?.AbstractText) out += fmt('DUCKDUCKGO', j.Heading || q, j.AbstractURL, j.AbstractText);
-  const rel = (j?.RelatedTopics || []).map((r) => r?.Text).filter(Boolean).slice(0, 3);
-  for (const r of rel) out += fmt('DUCKDUCKGO', r.split(' - ')[0].slice(0, 80), '', r);
-  return out;
-}
-
 async function stackexchange(q, sig) {
   const u = `https://api.stackexchange.com/2.3/search/advanced?q=${encodeURIComponent(q)}&site=stackoverflow&pagesize=4&order=desc&sort=relevance`;
   const j = await jfetch(u, { signal: sig });
@@ -71,68 +77,176 @@ async function github(q, sig) {
     fmt('GITHUB', r.full_name, r.html_url, `★ ${r.stargazers_count} — ${r.description || ''}`)).join('');
 }
 
-async function tavily(q, sig, key) {
-  const j = await jfetch('https://api.tavily.com/search', {
-    method: 'POST', signal: sig,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ query: q, max_results: 5 }),
-  });
-  return (j?.results || []).map((r) => fmt('TAVILY', r.title, r.url, r.content)).join('');
+// ── 9 P0 keyless Sources (ADR 0004) ──
+
+async function wikidata(q, sig) {
+  const u = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(q)}&language=en&format=json&limit=3&origin=*`;
+  const j = await jfetch(u, { signal: sig });
+  return (j?.search || []).map((e) =>
+    fmt('WIKIDATA', `${e.label}${e.description ? ` — ${e.description}` : ''}`, e.concepturi || `https://www.wikidata.org/wiki/${e.id}`, `QID ${e.id} · match ${e.match?.type || ''} ${e.match?.text || ''}`.trim())).join('');
 }
 
-async function brave(q, sig, key) {
-  const u = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5`;
-  const j = await jfetch(u, { signal: sig, headers: { 'X-Subscription-Token': key, Accept: 'application/json' } });
-  return (j?.web?.results || []).map((r) => fmt('BRAVE', r.title, r.url, r.description)).join('');
+async function openalex(q, sig) {
+  const u = `https://api.openalex.org/works?search=${encodeURIComponent(q)}&per_page=3&select=id,display_name,doi,publication_year,authorships,primary_location,cited_by_count,open_access`;
+  const j = await jfetch(u, { signal: sig });
+  return (j?.results || []).map((w) => {
+    const title = w.display_name || '';
+    const url = w.doi || w.id || '';
+    const year = w.publication_year ? `(${w.publication_year})` : '';
+    const auth = (w.authorships || []).slice(0, 2).map((a) => a.author?.display_name).filter(Boolean).join(', ');
+    const venue = w.primary_location?.source?.display_name || '';
+    const oa = w.open_access?.is_oa ? ' · OA' : '';
+    return fmt('OPENALEX', `${title} ${year}`.trim(), url, `${auth ? auth + ' — ' : ''}${venue}${oa} · cited_by ${w.cited_by_count ?? '—'}`.trim());
+  }).join('');
 }
 
-async function jina(q, sig, key) {
-  const r = await fetch(`https://s.jina.ai/${encodeURIComponent(q)}`, {
-    signal: sig, headers: { Authorization: `Bearer ${key}`, Accept: 'text/plain' },
-  });
-  if (!r.ok) throw new Error(String(r.status));
-  const text = (await r.text()).slice(0, 4000);
-  return fmt('JINA', q, '', text);
+async function crossref(q, sig) {
+  const mail = 'asm-agent@example.com';
+  const u = `https://api.crossref.org/works?query=${encodeURIComponent(q)}&rows=3&select=DOI,title,author,URL,container-title,abstract,created&mailto=${encodeURIComponent(mail)}`;
+  const j = await jfetch(u, { signal: sig, headers: { Accept: 'application/json' } });
+  return (j?.message?.items || []).map((w) => {
+    const title = (w.title && w.title[0]) || w.DOI || '';
+    const url = w.URL || (w.DOI ? `https://doi.org/${w.DOI}` : '');
+    const auth = (w.author || []).slice(0, 2).map((a) => [a.given, a.family].filter(Boolean).join(' ')).join(', ');
+    const venue = (w['container-title'] && w['container-title'][0]) || '';
+    const abs = w.abstract ? stripTags(w.abstract).slice(0, 220) : '';
+    return fmt('CROSSREF', title, url, `${auth ? auth + ' · ' : ''}${venue}${abs ? ' — ' + abs : ''}`.trim());
+  }).join('');
 }
 
-/** Keys read from settings each call so modal edits apply immediately. */
+async function semanticscholar(q, sig) {
+  const u = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(q)}&limit=3&fields=title,abstract,url,citationCount,year,authors`;
+  const j = await jfetch(u, { signal: sig });
+  const data = j?.data || j?.papers || [];
+  return (data).map((p) =>
+    fmt('SEMANTIC SCHOLAR', p.title || '', p.url || '', `${(p.authors || []).slice(0, 2).map((a) => a.name).join(', ')}${p.year ? ` · ${p.year}` : ''}${p.citationCount ? ` · cited ${p.citationCount}` : ''} — ${stripTags(p.abstract || '').slice(0, 180)}`.trim())).join('');
+}
+
+async function doaj(q, sig) {
+  const u = `https://doaj.org/api/v4/search/articles/${encodeURIComponent(q)}?pageSize=3`;
+  const j = await jfetch(u, { signal: sig });
+  return (j?.results || []).map((r) => {
+    const b = r.bibjson || {};
+    const title = b.title || q;
+    const doi = (b.identifier || []).find((x) => x.type === 'doi')?.id;
+    const url = doi ? `https://doi.org/${doi}` : (b.link || [])[0]?.url || '';
+    const journal = b.journal?.title || '';
+    const year = b.year || '';
+    const abs = stripTags(b.abstract || '').slice(0, 220);
+    return fmt('DOAJ', `${title}${year ? ` (${year})` : ''}`, url, `${journal ? journal + ' — ' : ''}${abs}`.trim());
+  }).join('');
+}
+
+async function openlibrary(q, sig) {
+  const u = `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=3&fields=key,title,author_name,first_publish_year,cover_edition_key`;
+  const j = await jfetch(u, { signal: sig });
+  return (j?.docs || []).map((d) =>
+    fmt('OPEN LIBRARY', d.title || q, `https://openlibrary.org${d.key}`, `${(d.author_name || []).slice(0, 2).join(', ')}${d.first_publish_year ? ` · ${d.first_publish_year}` : ''}`.trim())).join('');
+}
+
+async function dbpedia(q, sig) {
+  const u = `https://lookup.dbpedia.org/api/search?query=${encodeURIComponent(q)}&format=JSON&maxResults=3`;
+  const j = await jfetch(u, { signal: sig, headers: { Accept: 'application/json' } });
+  const docs = j?.docs || j?.results || [];
+  // lookup returns docs array where each has resource, label, comment
+  const arr = Array.isArray(docs) ? docs : [];
+  return arr.map((d) => {
+    const res = Array.isArray(d.resource) ? d.resource[0] : d.resource || d.uri || '';
+    const label = d.label || d.title || q;
+    const comment = stripTags(d.comment || d.description || '').slice(0, 220);
+    return fmt('DBPEDIA', label, res, comment);
+  }).join('');
+}
+
+
+
+async function lobsters(q, sig) {
+  // lobste.rs has no CORS-friendly search.json; use hottest.json filtered client-side
+  const j = await jfetch('https://lobste.rs/hottest.json', { signal: sig });
+  const all = Array.isArray(j) ? j : [];
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const filtered = all.filter((s) => {
+    const hay = `${s.title || ''} ${s.tags ? s.tags.join(' ') : ''} ${s.url || ''}`.toLowerCase();
+    return terms.some((t) => hay.includes(t));
+  }).slice(0, 3);
+  // fallback to unfiltered if no match (still show something)
+  const out = filtered.length ? filtered : all.slice(0, 2);
+  return out.map((s) =>
+    fmt('LOBSTE.RS', s.title || q, s.short_id_url || s.url || `https://lobste.rs/s/${s.short_id}`, `${s.score ?? 0} points · ${s.comment_count ?? 0} comments · tags ${ (s.tags || []).join(', ')}`)).join('');
+}
+
+/** Keys read from settings each call so modal edits apply immediately. Kept for BYO but not used in 13-keyless default. */
 function keys() {
   try { return JSON.parse(localStorage['asm.settings'] || '{}'); } catch { return {}; }
 }
 
+// Map timed job name -> display TAG for markdown grouping and UI header
+const TAG = {
+  wikipedia: 'WIKIPEDIA',
+  hn: 'HACKER NEWS',
+  stackexchange: 'STACK OVERFLOW',
+  github: 'GITHUB',
+  wikidata: 'WIKIDATA',
+  openalex: 'OPENALEX',
+  crossref: 'CROSSREF',
+  semanticscholar: 'SEMANTIC SCHOLAR',
+  doaj: 'DOAJ',
+  openlibrary: 'OPEN LIBRARY',
+  dbpedia: 'DBPEDIA',
+  lobsters: 'LOBSTE.RS',
+};
+
 export async function webSearch(query) {
   const failures = [];
-  const s = keys();
+
+  // helper to wrap timed with ms capture and tag
+  const withMs = (name, fn) => (async () => {
+    const start = performance.now();
+    const block = await timed(name, fn, failures);
+    const ms = Math.round(performance.now() - start);
+    const tag = TAG[name] || name.toUpperCase();
+    const hits = block ? (block.match(/^### \[/gm) || []).length : 0;
+    return { name, tag, block: block || '', ms, hits };
+  })();
+
   const jobs = [
-    timed('wikipedia', (sig) => wikipedia(query, sig), failures),
-    timed('hn', (sig) => hackernews(query, sig), failures),
-    timed('ddg', (sig) => duckduckgo(query, sig), failures),
-    timed('stackexchange', (sig) => stackexchange(query, sig), failures),
-    timed('github', (sig) => github(query, sig), failures),
+    withMs('wikipedia', (sig) => wikipedia(query, sig)),
+    withMs('hn', (sig) => hackernews(query, sig)),
+    withMs('stackexchange', (sig) => stackexchange(query, sig)),
+    withMs('github', (sig) => github(query, sig)),
+    withMs('wikidata', (sig) => wikidata(query, sig)),
+    withMs('openalex', (sig) => openalex(query, sig)),
+    withMs('crossref', (sig) => crossref(query, sig)),
+    withMs('semanticscholar', (sig) => semanticscholar(query, sig)),
+    withMs('doaj', (sig) => doaj(query, sig)),
+    withMs('openlibrary', (sig) => openlibrary(query, sig)),
+    withMs('dbpedia', (sig) => dbpedia(query, sig)),
+    withMs('lobsters', (sig) => lobsters(query, sig)),
   ];
-  if (s.tavily) jobs.push(timed('tavily', (sig) => tavily(query, sig, s.tavily), failures));
-  if (s.brave) jobs.push(timed('brave', (sig) => brave(query, sig, s.brave), failures));
-  if (s.jina) jobs.push(timed('jina', (sig) => jina(query, sig, s.jina), failures));
+  const settled = await Promise.allSettled(jobs);
+  const metas = settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
+  // Keep only sources that produced a block
+  const okMetas = metas.filter((m) => m.block);
 
-  const blocks = (await Promise.allSettled(jobs))
-    .map((r) => (r.status === 'fulfilled' ? r.value : ''))
-    .filter(Boolean);
-
-  // dedupe blocks by normalized URL line
+  // dedupe blocks by normalized URL line (first-win, grouped by Source weight)
+  // Per-block dedup preserves ADR 0004 grouped ranking; also track per-source hit adjustment for UI?
   const seen = new Set();
   const deduped = [];
-  for (const b of blocks) {
-    const url = (b.match(/^https?:\S+/m) || [''])[0];
+  const perSource = [];
+  for (const m of okMetas) {
+    const url = (m.block.match(/^https?:\S+/m) || [''])[0];
     if (url) {
       const n = norm(url);
       if (seen.has(n)) continue;
       seen.add(n);
     }
-    deduped.push(b);
+    deduped.push(m.block);
+    perSource.push({ tag: m.tag, hits: m.hits, ms: m.ms });
   }
 
   const markdown = deduped.join('').slice(0, 12000);
-  return { markdown, sources: deduped.length, failures };
+  // sources = number of source groups that contributed (deduped), failures = timed misses
+  return { markdown, sources: deduped.length, failures, perSource };
 }
 
 // debug hook
