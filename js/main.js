@@ -582,7 +582,7 @@ $('#btn-sysprompt')?.addEventListener('click', () => {
 }
 $('#btn-sysprompt-save')?.addEventListener('click', () => {
   const s = S.getActive(); if (!s) return;
-  const text = $('#sysprompt-text').value.trim() || S.PRESETS['RESEARCH ANALYST'];
+  const text = $('#sysprompt-text').value.trim() || S.PRESETS['BASIC AGENT'];
   const guessed = Object.entries(S.PRESETS).find(([, v]) => v === text)?.[0] || 'CUSTOM';
   S.setSystemPrompt(s.id, guessed, text);
   // replay wasm history with the new system message
