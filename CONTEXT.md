@@ -83,3 +83,7 @@ _Avoid_: scoring, sorting, ordering
 **Search Proxy**:
 Optional Worker route `GET /api/search?url=` (and `/api/arxiv?q=`) that forwards a CORS-blocked open source (e.g., arXiv Atom) through the same Worker that holds the Operator Key, adds `access-control-allow-origin: *`, and translates to JSON. Free, no key, only for sources that already pass the rest of the Inclusion Checklist.
 _Avoid_: cors proxy, gateway
+**Tool Card**:
+The collapsible per-Tool-Call panel (`js/main.js:339`) that shows one `web_search` run's grouped Source blocks and its completion status (`8 SOURCES · MISSED: …` or `FAILED: …`). One Tool Round with parallel calls shows N Tool Cards stacked in round order; older rounds auto-collapse.
+_Avoid_: tool bubble, search card
+
