@@ -434,7 +434,7 @@ async function doSend() {
   addUserMsg(text);
   setBusy(true);
 
-  let body = null, acc = '', raf = 0;
+  let body = null, acc = '', raf = 0, toolCards = [];
   // A tool-only round streams no prose; drop its placeholder rather than
   // leaving an empty AGENT bubble above the tool card.
   const dropIfEmpty = () => {
@@ -455,6 +455,8 @@ async function doSend() {
       dropIfEmpty();
       body = addMsg('assistant', 'AGENT ▸');
       acc = '';
+      toolCards = [];
+      window.__toolCards = toolCards;
       resetRender();
       renderDrain();
     },
@@ -464,11 +466,19 @@ async function doSend() {
     },
     onToolStart(name, args) {
       sfxTool();
-      window.__toolCard = addToolCard(name, args);
+      const card = addToolCard(name, args);
+      card._done = false;
+      toolCards.push(card);
+      window.__toolCard = card;
+      window.__toolCards = toolCards;
     },
     onToolDone(name, result) {
-      window.__toolCard?.done(result);
-      window.__toolCard = null;
+      const card = toolCards.find((c) => !c._done) || toolCards[toolCards.length - 1];
+      if (card) {
+        card.done(result);
+        card._done = true;
+      }
+      if (toolCards.every((c) => c._done)) window.__toolCard = null;
     },
     onRoundFinal(text) {
       if (!body) body = addMsg('assistant', 'AGENT ▸');

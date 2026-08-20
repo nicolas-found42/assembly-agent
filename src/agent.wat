@@ -877,12 +877,25 @@
 
   ;; end_turn — finalize assistant history entry (keeps tool meta for bridge)
   (func (export "end_turn")
+    (local $i i32)
     (call $hist_append
       (i32.const 2)
       (i32.load (global.get $cCurPtr)) (i32.load (global.get $cCurLen))
       (global.get $gTcid) (i32.load (global.get $cTcidLen))
       (global.get $gTcName) (i32.load (global.get $cTcNameLen))
       (i32.load (global.get $cTaPtr)) (i32.load (global.get $cTaLen)))
+    (local.set $i (i32.const 1))
+    (block $done (loop $lp
+      (br_if $done (i32.ge_u (local.get $i) (i32.load (global.get $cTcCount))))
+      (call $hist_append
+        (i32.const 4)
+        (i32.const 0) (i32.const 0)
+        (call $tc_id (local.get $i)) (i32.load (call $tc_id_len (local.get $i)))
+        (call $tc_name (local.get $i)) (i32.load (call $tc_name_len (local.get $i)))
+        (i32.load (call $tc_args_ptr (local.get $i))) (i32.load (call $tc_args_len (local.get $i))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $lp)
+    ))
     (i32.store (global.get $cCurPtr) (i32.const 0))
     (i32.store (global.get $cCurLen) (i32.const 0))
     (i32.store (global.get $cCurCap) (i32.const 0))

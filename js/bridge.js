@@ -81,17 +81,35 @@ export function historyMessages() {
 
 /** Build OpenRouter `messages` payload from wasm history. */
 export function buildMessages() {
-  return historyMessages().map((m) => {
-    if (m.role === 2 && m.tool_call_id) {
-      return {
-        role: 'assistant', content: m.content || '',
-        tool_calls: [{ id: m.tool_call_id, type: 'function',
-          function: { name: m.name, arguments: m.args } }],
-      };
+  const hist = historyMessages();
+  const out = [];
+  for (let i = 0; i < hist.length; i++) {
+    const m = hist[i];
+    if (m.role === 2) {
+      if (m.tool_call_id) {
+        const tool_calls = [{ id: m.tool_call_id, type: 'function', function: { name: m.name, arguments: m.args } }];
+        while (i + 1 < hist.length && hist[i + 1].role === 4) {
+          const n = hist[++i];
+          tool_calls.push({ id: n.tool_call_id, type: 'function', function: { name: n.name, arguments: n.args } });
+        }
+        out.push({ role: 'assistant', content: m.content || '', tool_calls });
+      } else {
+        out.push({ role: 'assistant', content: m.content });
+      }
+    } else if (m.role === 3) {
+      out.push({ role: 'tool', tool_call_id: m.tool_call_id, content: m.content });
+    } else if (m.role === 0) {
+      out.push({ role: 'system', content: m.content });
+    } else if (m.role === 1) {
+      out.push({ role: 'user', content: m.content });
+    } else if (m.role === 4) {
+      // stray role-4 without preceding role-2 — skip, should not appear alone
+      continue;
+    } else {
+      out.push({ role: 'user', content: m.content });
     }
-    if (m.role === 3) return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
-    return { role: m.role === 0 ? 'system' : 'user', content: m.content };
-  });
+  }
+  return out;
 }
 
 /** New render bytes since the last drain (empty string when none). */
@@ -265,17 +283,41 @@ export async function send(text, cb, opts) {
       return;
     }
 
-    const { name, query } = pendingToolCall();
-    cb.onToolStart?.(name, { query });
-    const result = await webSearch(query || 'webassembly');
+    const count = E.tc_count();
+    if (count > 1) {
+      const out = E.scratch() + 0xF000;
+      const calls = [];
+      for (let i = 0; i < count; i++) {
+        E.tc_get(i, out);
+        const dv = new DataView(memBuf(), out, 24);
+        const id = str(dv.getInt32(0, true), dv.getInt32(4, true));
+        const name = str(dv.getInt32(8, true), dv.getInt32(12, true));
+        const argsText = str(dv.getInt32(16, true), dv.getInt32(20, true));
+        let query = '';
+        try { query = JSON.parse(argsText).query ?? ''; } catch {}
+        calls.push({ id, name, query });
+      }
+      for (const c of calls) cb.onToolStart?.(c.name, { query: c.query });
+      const results = await Promise.all(calls.map((c) => webSearch(c.query || 'webassembly')));
+      for (let i = 0; i < calls.length; i++) {
+        const c = calls[i];
+        const result = results[i];
+        appendHistory(3, result.markdown, { tool_call_id: c.id, name: c.name });
+        cb.onToolDone?.(c.name, result);
+      }
+    } else {
+      const { name, query } = pendingToolCall();
+      cb.onToolStart?.(name, { query });
+      const result = await webSearch(query || 'webassembly');
 
-    const rb = new TextEncoder().encode(result.markdown);
-    const S = E.scratch();
-    new Uint8Array(memBuf(), S, rb.length).set(rb);
-    E.tool_result_append(S, rb.length);
-    E.tool_result_flush();
+      const rb = new TextEncoder().encode(result.markdown);
+      const S = E.scratch();
+      new Uint8Array(memBuf(), S, rb.length).set(rb);
+      E.tool_result_append(S, rb.length);
+      E.tool_result_flush();
 
-    cb.onToolDone?.(name, result);
+      cb.onToolDone?.(name, result);
+    }
     if (round === MAX_TOOL_ROUNDS - 1) exhausted = true;
   }
 

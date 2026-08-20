@@ -116,6 +116,8 @@ export function exportMarkdown(session) {
     else if (m.role === 2) {
       lines.push('## ASSISTANT', '', m.content || '', '');
       if (m.tool_call_id) lines.push(`*(tool call: ${m.name}(${m.args}))*`, '');
+    } else if (m.role === 4) {
+      lines.push(`*(tool call: ${m.name}(${m.args}))*`, '');
     } else if (m.role === 3) lines.push('<details><summary>tool result</summary>', '', m.content, '', '</details>', '');
   }
   download(`${session.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'session'}.md`, 'text/markdown', lines.join('\n'));
