@@ -216,7 +216,10 @@
           (local.set $pos (i32.add (local.get $pos) (i32.const 1)))
           (br $dl)))
       ;; escape: need at least 2 bytes and room for the escape body
-      (if (i32.ge_u (i32.add (local.get $pos) (i32.const 2)) (local.get $e))
+      ;; A complete 2-byte escape may sit flush against $e (pos+2 == e): providers
+      ;; chunk tool-call arguments mid-string, so `{\"` arrives as its own
+      ;; fragment. Only pos+2 > e is a genuine trailing lone backslash.
+      (if (i32.gt_u (i32.add (local.get $pos) (i32.const 2)) (local.get $e))
         (then ;; trailing lone backslash (malformed) — stop
           (br $fin)))
     (local.set $c (i32.load8_u (i32.add (local.get $pos) (i32.const 1))))
