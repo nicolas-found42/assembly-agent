@@ -10,6 +10,7 @@ const SORTS = ['PRICE', 'CONTEXT', 'LATENCY', 'THROUGHPUT', 'LATEST'];
 const DEFAULT_DESC = [0, 1, 0, 0, 1];
 
 let catalog = []; // JS-side mirror for default-model logic
+const isAnon = () => { try { const s = JSON.parse(localStorage['asm.settings'] || '{}'); return !s.key; } catch { return true; } };
 
 async function fetchJson(url) {
   const r = await fetch(url);
@@ -127,6 +128,17 @@ export function defaultModelId() {
 
 export function getActiveModel() {
   const saved = localStorage['asm.activeModel'];
+  // Q12 B: Anonymous users see only Free Models — force free if saved is paid
+  if (isAnon() && saved) {
+    const hit = catalog.find((m) => m.id === saved);
+    if (hit && !hit.free && !saved.endsWith(':free')) {
+      const freeId = defaultModelId();
+      if (freeId) { localStorage['asm.activeModel'] = freeId; return freeId; }
+    }
+    // still allow if anon but saved is free
+    if (saved && catalog.some((m) => m.id === saved && (m.free || saved.endsWith(':free')))) return saved;
+    return defaultModelId();
+  }
   if (saved && catalog.some((m) => m.id === saved)) return saved;
   return defaultModelId();
 }
@@ -141,6 +153,8 @@ let onSelect = null;
 export function openCombobox(cb) {
   onSelect = cb;
   if (!modal) modal = buildModal();
+  // Q12 B: default to FREE filter for Anonymous Users
+  if (isAnon()) state.mask = 1;
   state.query = '';
   state.active = 0;
   modal.querySelector('.model-search input').value = '';
@@ -152,7 +166,6 @@ export function openCombobox(cb) {
 export function closeCombobox() { if (modal) modal.hidden = true; }
 
 function buildModal() {
-  const el = document.createElement('div');
   el.className = 'modal-backdrop';
   el.innerHTML = `
     <div class="modal model-modal">
@@ -181,7 +194,18 @@ function buildModal() {
     b.className = 'pill';
     b.textContent = name;
     b.dataset.mask = mask;
-    b.addEventListener('click', () => { state.mask = mask; state.active = 0; refresh(); });
+    b.addEventListener('click', () => {
+      // Q12 B: Anonymous Users locked to FREE
+      if (isAnon() && mask !== 1 && mask !== 0) {
+        // allow ALL (0) to toggle back? No — force FREE for anon
+        state.mask = 1;
+      } else if (isAnon() && mask === 0) {
+        state.mask = 1;
+      } else {
+        state.mask = mask;
+      }
+      state.active = 0; refresh();
+    });
     pills.appendChild(b);
   }
 

@@ -223,13 +223,14 @@ function buildSettings() {
       <div class="model-head"><span class="modal-title">SETTINGS</span>
         <button class="icon-btn set-close">✕</button></div>
       <div class="set-field">
-        <label>OPENROUTER API KEY</label>
+        <label>OPENROUTER API KEY — Optional for Free Models</label>
         <div class="set-row">
-          <input type="password" class="set-key" placeholder="sk-or-…" style="flex:1">
+          <input type="password" class="set-key" placeholder="sk-or-…  (leave empty for :free via Proxy)" style="flex:1">
           <button class="side-btn set-show">SHOW</button>
           <button class="side-btn primary set-test">TEST</button>
           <span class="test-badge"></span>
         </div>
+        <div class="set-hint" style="font-size:11px;opacity:.7;margin-top:4px">Free models (<code>:free</code>) work without a key via the Proxy. Paid models need your own key.</div>
       </div>
       <div class="set-field"><label>TAVILY KEY (OPTIONAL)</label><input type="password" class="set-tavily" placeholder="tvly-…"></div>
       <div class="set-field"><label>BRAVE KEY (OPTIONAL)</label><input type="password" class="set-brave" placeholder="BSA…"></div>
@@ -262,6 +263,9 @@ function buildSettings() {
     settings.brave = el.querySelector('.set-brave').value.trim();
     settings.jina = el.querySelector('.set-jina').value.trim();
     S.saveSettings(settings);
+    // Q12 B: if Anonymous, ensure active model is Free and button reflects it
+    try { if (!settings.key) getActiveModel(); } catch {}
+    try { refreshModelButton(); } catch {}
   };
   for (const cls of ['set-key', 'set-tavily', 'set-brave', 'set-jina'])
     el.querySelector(`.${cls}`).addEventListener('change', save);
@@ -412,15 +416,18 @@ function setBusy(b) {
   btnSend.disabled = b;
   btnStop.hidden = !b;
 }
-
 async function doSend() {
   if (busy || streaming()) return;
   const text = input.value.trim();
   if (!text) return;
   const key = settings.key;
-  if (!key) { $('#btn-settings').click(); return; }
   const model = getActiveModel();
   if (!model) { addErrorCard('NO MODEL — open the catalog and select one.'); return; }
+  const isFree = model.endsWith(':free');
+  if (!key && !isFree) {
+    addErrorCard('This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.');
+    return;
+  }
 
   input.value = '';
   input.style.height = 'auto';

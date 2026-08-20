@@ -1,0 +1,12 @@
+name = "asm-agent-proxy"
+main = "worker/api-chat.js"
+compatibility_date = "2024-11-01"
+
+# No KV — stateless per Q7 C
+[vars]
+# OPENROUTER_KEY is set via `wrangler secret put OPENROUTER_KEY` (Operator Key)
+
+# Pages stays on GH Pages; Worker serves /api/*
+# Route example: api.<domain>/* or use workers.dev for dev
+# Add route in Cloudflare dashboard after first deploy:
+#   api.your-domain.com/api/* -> asm-agent-proxy

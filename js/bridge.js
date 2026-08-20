@@ -114,6 +114,13 @@ export function streaming() { return !!aborter; }
 
 export function stop() { if (aborter) aborter.abort(); }
 
+export const isFreeModel = (id) => typeof id === 'string' && id.endsWith(':free');
+export const proxyUrl = () => {
+  try { const v = localStorage['asm.proxyUrl']; if (v) return v; } catch {}
+  return '/api/chat';
+};
+export const shouldUseProxy = (key, model) => !key && isFreeModel(model);
+
 /**
  * send(text) — append user msg, stream the reply, run web_search tool rounds
  * (max 5). Callbacks: onDelta(str), onRoundStart(), onRoundFinal(text),
@@ -122,9 +129,15 @@ export function stop() { if (aborter) aborter.abort(); }
  */
 export async function send(text, cb, opts) {
   const { key, model } = opts;
+  const useProxy = shouldUseProxy(key, model);
   appendHistory(1, text);
   saveActiveSession(historyMessages());
-
+  if (!key && !useProxy) {
+    // paid model without key — blocked before network (Q9 A + Q11 A helper)
+    cb.onError?.('This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.');
+    cb.onDone?.();
+    return;
+  }
   for (let round = 0; round < 5; round++) {
     resetRender();
     E.begin_turn();
@@ -147,17 +160,30 @@ export async function send(text, cb, opts) {
     aborter = new AbortController();
     let res;
     try {
-      res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        signal: aborter.signal,
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': location.origin,
-          'X-Title': 'ASM::AGENT',
-        },
-        body,
-      });
+      if (useProxy) {
+        res = await fetch(proxyUrl(), {
+          method: 'POST',
+          signal: aborter.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'HTTP-Referer': location.origin,
+            'X-Title': 'ASM::AGENT',
+          },
+          body,
+        });
+      } else {
+        res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          signal: aborter.signal,
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': location.origin,
+            'X-Title': 'ASM::AGENT',
+          },
+          body,
+        });
+      }
     } catch (err) {
       aborter = null;
       if (err.name === 'AbortError') { E.end_turn(); cb.onAborted?.(); cb.onDone?.(); return; }
@@ -168,6 +194,7 @@ export async function send(text, cb, opts) {
       aborter = null;
       let msg = `HTTP ${res.status}`;
       try { const j = await res.json(); msg = j?.error?.message || msg; } catch {}
+      if (res.status === 429 && useProxy) msg += ' — Free tier busy — try again in a minute or add your own key in SET to bypass.';
       E.end_turn();
       cb.onError?.(msg); cb.onDone?.(); return;
     }
