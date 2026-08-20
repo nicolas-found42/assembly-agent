@@ -1,0 +1,1545 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-20T19:42:36.023Z",
+    "nodeVersion": "v26.7.0",
+    "timeoutMs": 8000,
+    "queries": [
+      "WebAssembly SIMD",
+      "CRISPR prime editing",
+      "Rust borrow checker",
+      "quantum error correction surface code",
+      "React Server Components",
+      "black hole information paradox",
+      "TypeScript 5.5 decorators",
+      "mRNA vaccine stability",
+      "Kubernetes sidecar pattern",
+      "large language model quantization",
+      "gravitational wave detection LIGO",
+      "WASI preview 2",
+      "perovskite solar cell efficiency",
+      "SQLite WAL mode",
+      "protein folding AlphaFold 3",
+      "WebGPU compute shaders",
+      "dark matter direct detection",
+      "Bun runtime vs Node",
+      "fusion tokamak ITER",
+      "prompt caching anthropic"
+    ],
+    "note": "Live fan-out via Node timed/jfetch/fmt pipeline mirroring js/search.js; keyed sources skipped when env keys absent; 600ms inter-query delay.",
+    "env": "node-direct (no CORS enforcement); browser vs Worker differences noted in markdown report"
+  },
+  "totals": {
+    "queries": 20,
+    "avgTotalMs": 321,
+    "p50TotalMs": 260,
+    "p95TotalMs": 815,
+    "avgSourcesPerQuery": 2.5,
+    "avgTotalBeforeSlice": 1873,
+    "maxBeforeSlice": 8060,
+    "truncatedQueries": 0,
+    "totalDedupHits": 1,
+    "avgDedupHits": 0.05,
+    "failureFrequency": {
+      "wikipedia": 11,
+      "hn": 0,
+      "ddg": 0,
+      "stackexchange": 0,
+      "github": 10,
+      "tavily": 0,
+      "brave": 0,
+      "jina": 0
+    }
+  },
+  "bySource": {
+    "wikipedia": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 0.45,
+      "emptyRate": 0,
+      "p50_ms": 273,
+      "p95_ms": 815,
+      "p50_all_ms": 25,
+      "p95_all_ms": 815,
+      "avg_ms": 180,
+      "avg_bytes": 728,
+      "p50_bytes": 736,
+      "p95_bytes": 772,
+      "min_bytes": 685,
+      "max_bytes": 772,
+      "failures": [
+        "429",
+        "429",
+        "429",
+        "429",
+        "429"
+      ]
+    },
+    "hn": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 1,
+      "emptyRate": 0.05,
+      "p50_ms": 236,
+      "p95_ms": 324,
+      "p50_all_ms": 236,
+      "p95_all_ms": 324,
+      "avg_ms": 245,
+      "avg_bytes": 613,
+      "p50_bytes": 588,
+      "p95_bytes": 818,
+      "min_bytes": 490,
+      "max_bytes": 818,
+      "failures": []
+    },
+    "ddg": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 1,
+      "emptyRate": 0.95,
+      "p50_ms": 71,
+      "p95_ms": 171,
+      "p50_all_ms": 71,
+      "p95_all_ms": 171,
+      "avg_ms": 85,
+      "avg_bytes": 1827,
+      "p50_bytes": 1827,
+      "p95_bytes": 1827,
+      "min_bytes": 1827,
+      "max_bytes": 1827,
+      "failures": []
+    },
+    "stackexchange": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 1,
+      "emptyRate": 0.35,
+      "p50_ms": 118,
+      "p95_ms": 251,
+      "p50_all_ms": 118,
+      "p95_all_ms": 251,
+      "avg_ms": 131,
+      "avg_bytes": 509,
+      "p50_bytes": 612,
+      "p95_bytes": 927,
+      "min_bytes": 165,
+      "max_bytes": 927,
+      "failures": []
+    },
+    "github": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 0.5,
+      "emptyRate": 0.05,
+      "p50_ms": 290,
+      "p95_ms": 406,
+      "p50_all_ms": 121,
+      "p95_all_ms": 406,
+      "avg_ms": 151,
+      "avg_bytes": 1440,
+      "p50_bytes": 740,
+      "p95_bytes": 6749,
+      "min_bytes": 652,
+      "max_bytes": 6749,
+      "failures": [
+        "403",
+        "403",
+        "403",
+        "403",
+        "403"
+      ]
+    },
+    "tavily": {
+      "attempted": 0,
+      "skipped": 20,
+      "successRate": null,
+      "emptyRate": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p50_all_ms": null,
+      "p95_all_ms": null,
+      "avg_ms": null,
+      "avg_bytes": null,
+      "p50_bytes": null,
+      "p95_bytes": null,
+      "min_bytes": null,
+      "max_bytes": null,
+      "failures": []
+    },
+    "brave": {
+      "attempted": 0,
+      "skipped": 20,
+      "successRate": null,
+      "emptyRate": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p50_all_ms": null,
+      "p95_all_ms": null,
+      "avg_ms": null,
+      "avg_bytes": null,
+      "p50_bytes": null,
+      "p95_bytes": null,
+      "min_bytes": null,
+      "max_bytes": null,
+      "failures": []
+    },
+    "jina": {
+      "attempted": 0,
+      "skipped": 20,
+      "successRate": null,
+      "emptyRate": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p50_all_ms": null,
+      "p95_all_ms": null,
+      "avg_ms": null,
+      "avg_bytes": null,
+      "p50_bytes": null,
+      "p95_bytes": null,
+      "min_bytes": null,
+      "max_bytes": null,
+      "failures": []
+    }
+  },
+  "results": [
+    {
+      "query": "WebAssembly SIMD",
+      "totalMs": 429,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2695,
+      "truncated": false,
+      "slicedLen": 2695,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 273,
+          "bytes": 715,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 254,
+          "bytes": 537,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 113,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 251,
+          "bytes": 726,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 406,
+          "bytes": 743,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Single instruction, multiple data\nhttps://en.wikipedia.org/wiki/Single_instruction%2C_multiple_data\nautovectoring, when compiling C or C++ to WebAssembly, can target WebAssembly SIMD to automatically make use of SIMD, while SIMD intrinsic are also available. It\n\n### [WIKIPEDIA] WebAssembly\nhttps://en.wikipedia.org/wiki/WebAssembly\nWebAssembly 2.0 specification was finished in 2022 and became a W3C standard in December 2024. It adds many single instruction, multiple data (SIMD)\n\n#"
+    },
+    {
+      "query": "CRISPR prime editing",
+      "totalMs": 284,
+      "sources": 3,
+      "failures": [],
+      "totalBeforeSlice": 2173,
+      "truncated": false,
+      "slicedLen": 2173,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 245,
+          "bytes": 745,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 236,
+          "bytes": 750,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 68,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 109,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": true,
+          "ms": 281,
+          "bytes": 713,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] CRISPR gene editing\nhttps://en.wikipedia.org/wiki/CRISPR_gene_editing\nCRISPR gene editing (/ˈkrɪspər/; pronounced like &quot;crisper&quot;; an abbreviation for &quot;clustered regularly interspaced short palindromic repeats&quot;) is a genetic\n\n### [WIKIPEDIA] Prime editing\nhttps://en.wikipedia.org/wiki/Prime_editing\nPrime editing is a &#039;search-and-replace&#039; genome editing technology in molecular biology by which the genome of living organisms may be modified. The technol"
+    },
+    {
+      "query": "Rust borrow checker",
+      "totalMs": 455,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2647,
+      "truncated": false,
+      "slicedLen": 2647,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 455,
+          "bytes": 757,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 288,
+          "bytes": 652,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 133,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 133,
+          "bytes": 612,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 290,
+          "bytes": 652,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Rust (programming language)\nhttps://en.wikipedia.org/wiki/Rust_(programming_language)\nprevented by the &quot;borrow checker&quot;, which tracks the object lifetime of references at compile time. Software developer Graydon Hoare created Rust in 2006 while\n\n### [WIKIPEDIA] Rust compiler\nhttps://en.wikipedia.org/wiki/Rust_compiler\ncontrol-flow graph specifically designed to execute the language&#039;s borrow checker and run Rust-specific optimizations, such as removing dead code, be"
+    },
+    {
+      "query": "quantum error correction surface code",
+      "totalMs": 544,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2633,
+      "truncated": false,
+      "slicedLen": 2633,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 543,
+          "bytes": 716,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 253,
+          "bytes": 551,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 160,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 161,
+          "bytes": 369,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 317,
+          "bytes": 1021,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Quantum error correction\nhttps://en.wikipedia.org/wiki/Quantum_error_correction\nQuantum error correction (QEC) comprises a set of techniques used in quantum memory and quantum computing to protect quantum information from errors arising\n\n### [WIKIPEDIA] Surface code\nhttps://en.wikipedia.org/wiki/Surface_code\nThe surface code is a topological quantum error correcting code, and an example of a stabilizer code, defined on a two-dimensional spin lattice. The first\n\n### [WIKIPEDIA] St"
+    },
+    {
+      "query": "React Server Components",
+      "totalMs": 382,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2844,
+      "truncated": false,
+      "slicedLen": 2844,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 382,
+          "bytes": 687,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 231,
+          "bytes": 714,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 89,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 224,
+          "bytes": 760,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 246,
+          "bytes": 709,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] React (software)\nhttps://en.wikipedia.org/wiki/React_(software)\nHooks, which may call other Hooks. React Server Components (RSC) are function components that run exclusively on the server. The concept was first introduced\n\n### [WIKIPEDIA] Next.js\nhttps://en.wikipedia.org/wiki/Next.js\nprivate company Vercel providing React-based web applications with server-side rendering and static rendering. React documentation mentions Next.js among\n\n### [WIKIPEDIA] SharePoint\nhttps://en.wikipe"
+    },
+    {
+      "query": "black hole information paradox",
+      "totalMs": 815,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2690,
+      "truncated": false,
+      "slicedLen": 2690,
+      "dedup": {
+        "before": 5,
+        "after": 4,
+        "hits": 1
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 815,
+          "bytes": 772,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 324,
+          "bytes": 818,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 171,
+          "bytes": 1827,
+          "error": null,
+          "skipped": false
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 170,
+          "bytes": 209,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 325,
+          "bytes": 913,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Black hole information paradox\nhttps://en.wikipedia.org/wiki/Black_hole_information_paradox\nThe black hole information paradox is an unsolved problem in physics and a paradox that appears when the predictions of quantum mechanics and general relativity\n\n### [WIKIPEDIA] Black hole complementarity\nhttps://en.wikipedia.org/wiki/Black_hole_complementarity\nBlack hole complementarity is a conjectured solution to the black hole information paradox, proposed by Leonard Susskind, Lárus Th"
+    },
+    {
+      "query": "TypeScript 5.5 decorators",
+      "totalMs": 253,
+      "sources": 2,
+      "failures": [],
+      "totalBeforeSlice": 906,
+      "truncated": false,
+      "slicedLen": 906,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 253,
+          "bytes": 736,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 223,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 88,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 117,
+          "bytes": 179,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 121,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] TypeScript\nhttps://en.wikipedia.org/wiki/TypeScript\nTypeScript (TS) is a high-level programming language that adds static typing with optional type annotations to JavaScript. It is designed for developing\n\n### [WIKIPEDIA] AtScript\nhttps://en.wikipedia.org/wiki/AtScript\npure TypeScript. The name “AtScript” comes from the @ “at” symbol used for annotations in many languages (e.g. Java annotations and Python decorators). &quot;Angular\n\n### [WIKIPEDIA] Furiosa: A Mad Max Saga\nhttps:/"
+    },
+    {
+      "query": "mRNA vaccine stability",
+      "totalMs": 260,
+      "sources": 3,
+      "failures": [],
+      "totalBeforeSlice": 8060,
+      "truncated": false,
+      "slicedLen": 8060,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 214,
+          "bytes": 737,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 211,
+          "bytes": 604,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 71,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 106,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": true,
+          "ms": 258,
+          "bytes": 6749,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] MRNA vaccine\nhttps://en.wikipedia.org/wiki/MRNA_vaccine\nAn mRNA vaccine is a type of vaccine that uses a copy of a molecule called messenger RNA (mRNA) to produce an immune response. The vaccine delivers molecules\n\n### [WIKIPEDIA] Self-amplifying RNA\nhttps://en.wikipedia.org/wiki/Self-amplifying_RNA\nresponse, making it a promising tool for vaccines and other therapeutic applications. As a &quot;next-generation&quot; mRNA, saRNA is designed to achieve greater protein\n\n### [WIKIPED"
+    },
+    {
+      "query": "Kubernetes sidecar pattern",
+      "totalMs": 306,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2848,
+      "truncated": false,
+      "slicedLen": 2848,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 173,
+          "bytes": 685,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 305,
+          "bytes": 542,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 65,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 118,
+          "bytes": 927,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 258,
+          "bytes": 722,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Sidecar proxy\nhttps://en.wikipedia.org/wiki/Sidecar_proxy\ntelemetry data. Service mesh Microservices Reverse proxy Kubernetes Envoy (software) &quot;What Is a Sidecar Proxy?&quot;. NGINX. Retrieved 28 April 2026. &quot;What is a\n\n### [WIKIPEDIA] Microservices\nhttps://en.wikipedia.org/wiki/Microservices\nreverse proxy server, called a service proxy, sidecar proxy, or sidecar. The service instance and sidecar proxy share a container, and the containers are\n\n### [WIKIPEDIA] Dapr\nhttp"
+    },
+    {
+      "query": "large language model quantization",
+      "totalMs": 326,
+      "sources": 3,
+      "failures": [
+        "wikipedia"
+      ],
+      "totalBeforeSlice": 1966,
+      "truncated": false,
+      "slicedLen": 1966,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 21,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 209,
+          "bytes": 532,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 65,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 119,
+          "bytes": 717,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 325,
+          "bytes": 740,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] SiLQ: Simple Large Language Model Quantization-Aware Training\nhttps://arxiv.org/abs/2507.16933\n2 points · 0 comments\n\n### [HACKER NEWS] TurboQuant: A first-principles walkthrough\nhttps://news.ycombinator.com/item?id=47919837\n0 points · 0 comments\n\n### [HACKER NEWS] Ask HN: Who wants to be hired? (September 2023)\nhttps://news.ycombinator.com/item?id=37385432\n0 points · 0 comments\n\n### [HACKER NEWS] Large Language Model Training Using FP4 Quantization\nhttps://arxiv.org/abs/2501.1"
+    },
+    {
+      "query": "gravitational wave detection LIGO",
+      "totalMs": 224,
+      "sources": 2,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 682,
+      "truncated": false,
+      "slicedLen": 682,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 23,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 223,
+          "bytes": 522,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 74,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 116,
+          "bytes": 165,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 18,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Rumors of gravitational wave detection by LIGO and Virgo\nhttp://geektimes.ru/post/266048/\n2 points · 0 comments\n\n### [HACKER NEWS] Star Just Ate a Planet, and It's Not Done Yet\nhttps://news.ycombinator.com/item?id=48855075\n0 points · 0 comments\n\n### [HACKER NEWS] The Nobel Prize in Physics 2021\nhttps://news.ycombinator.com/item?id=28757896\n0 points · 0 comments\n\n### [HACKER NEWS] Quantum entangled photons react to Earth's spin\nhttps://news.ycombinator.com/item?id=40700736\n0 poi"
+    },
+    {
+      "query": "WASI preview 2",
+      "totalMs": 235,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 486,
+      "truncated": false,
+      "slicedLen": 486,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 21,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 235,
+          "bytes": 490,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 69,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 103,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 17,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] WASI Preview 2 Launched\nhttps://blog.sunfishcode.online/wasi-preview2/\n16 points · 1 comments\n\n### [HACKER NEWS] WASI Preview 2 Launched\nhttps://blog.sunfishcode.online/wasi-preview2/\n9 points · 0 comments\n\n### [HACKER NEWS] WASI Launching Preview 2\nhttps://github.com/WebAssembly/WASI/pull/577\n5 points · 0 comments\n\n### [HACKER NEWS] Launched! WebAssembly System Interface WASI Preview 2 Discussion\nhttps://www.youtube.com/watch?v=eV2PoyJtWAg\n1 points · 1 comments\n\n"
+    },
+    {
+      "query": "perovskite solar cell efficiency",
+      "totalMs": 251,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 763,
+      "truncated": false,
+      "slicedLen": 763,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 18,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 251,
+          "bytes": 767,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 63,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 103,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 21,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Inverted perovskite solar cell breaks 25% efficiency record\nhttps://news.northwestern.edu/stories/2023/11/perovskite-solar-cell-efficiency-record/\n123 points · 54 comments\n\n### [HACKER NEWS] Inverted perovskite solar cell breaks 25% efficiency record\nhttps://techxplore.com/news/2023-11-inverted-perovskite-solar-cell-efficiency.html\n6 points · 0 comments\n\n### [HACKER NEWS] Researchers achieve world record efficiency with new type of solar cell\nhttps://www.thecooldown.com/green-t"
+    },
+    {
+      "query": "SQLite WAL mode",
+      "totalMs": 201,
+      "sources": 2,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 1300,
+      "truncated": false,
+      "slicedLen": 1300,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 20,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 200,
+          "bytes": 588,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 73,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 119,
+          "bytes": 724,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 18,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Comparing SQLite WAL Mode to Voron’s\nhttps://ravendb.net/articles/comparing-sqlite-wal-mode-to-vorons\n3 points · 0 comments\n\n### [HACKER NEWS] Comparing SQLite WAL Mode to Voron’s\nhttps://ravendb.net/articles/comparing-sqlite-wal-mode-to-vorons\n1 points · 0 comments\n\n### [HACKER NEWS] A Swift library with support for SQLite WAL mode\nhttps://github.com/groue/GRDB.swift#database-pools\n1 points · 0 comments\n\n### [HACKER NEWS] Show HN: Lightweight data analytics using SQLite, Bash "
+    },
+    {
+      "query": "protein folding AlphaFold 3",
+      "totalMs": 239,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 556,
+      "truncated": false,
+      "slicedLen": 556,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 24,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 238,
+          "bytes": 562,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 66,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 108,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 20,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Show HN: CUDA, Shmuda: Fold Proteins on a MacBook\nhttps://latentspacecraft.com/posts/mlx-protein-folding\n11 points · 3 comments\n\n### [HACKER NEWS] Google shuts down Nobel Prize winning AlphaFold\nhttps://news.ycombinator.com/item?id=49101638\n0 points · 0 comments\n\n### [HACKER NEWS] The Thinking Game Film – Google DeepMind documentary\nhttps://news.ycombinator.com/item?id=46100987\n0 points · 0 comments\n\n### [HACKER NEWS] Why haven't quantum computers factored 21 yet?\nhttps://news."
+    },
+    {
+      "query": "WebGPU compute shaders",
+      "totalMs": 222,
+      "sources": 2,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 1281,
+      "truncated": false,
+      "slicedLen": 1281,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 21,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 221,
+          "bytes": 503,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 65,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 124,
+          "bytes": 788,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 19,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] An experimental editor for WebGPU compute shaders\nhttps://compute.toys/\n136 points · 36 comments\n\n### [HACKER NEWS] Parallelizing Cellular Automata with WebGPU Compute Shaders\nhttps://vectrx.substack.com/p/webgpu-cellular-automata\n65 points · 7 comments\n\n### [HACKER NEWS] Compute.toys – Shadertoy for WebGPU compute shaders\nhttps://compute.toys\n2 points · 0 comments\n\n### [HACKER NEWS] Experimental editor for WebGPU compute shaders\nhttps://compute.toys/\n2 points · 0 comments\n\n###"
+    },
+    {
+      "query": "dark matter direct detection",
+      "totalMs": 220,
+      "sources": 2,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 940,
+      "truncated": false,
+      "slicedLen": 940,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 20,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 219,
+          "bytes": 721,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 64,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 110,
+          "bytes": 224,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 18,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Mechanical Engineering Officer: Dark Matter Direct Detection Experiments\nhttps://jobs.theconversation.com/jobs/193855607-mechanical-engineering-officer-dark-matter-direct-detection-experiments-at-university-of-melbourne\n2 points · 0 comments\n\n### [HACKER NEWS] Dark matter scaffolding of universe detected for the first time\nhttps://news.ycombinator.com/item?id=4439581\n0 points · 0 comments\n\n### [HACKER NEWS] On the Work of Edward Witten (1990) [pdf]\nhttps://news.ycombinator.com/"
+    },
+    {
+      "query": "Bun runtime vs Node",
+      "totalMs": 240,
+      "sources": 2,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 777,
+      "truncated": false,
+      "slicedLen": 777,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 21,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 239,
+          "bytes": 564,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 65,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 132,
+          "bytes": 220,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 19,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] C++ is an absolute blast\nhttps://news.ycombinator.com/item?id=42502534\n0 points · 0 comments\n\n### [HACKER NEWS] Show HN: Ant – A JavaScript runtime and ecosystem\nhttps://news.ycombinator.com/item?id=48879599\n0 points · 0 comments\n\n### [HACKER NEWS] Will Bun JavaScript Take Node's Crown\nhttps://news.ycombinator.com/item?id=32460001\n0 points · 0 comments\n\n### [HACKER NEWS] Bun vs. Deno vs. Node.js: which JavaScript runtime wins in 2026?\nhttps://botmonster.com/web-dev/bun-vs-deno-"
+    },
+    {
+      "query": "fusion tokamak ITER",
+      "totalMs": 234,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 603,
+      "truncated": false,
+      "slicedLen": 603,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 23,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 233,
+          "bytes": 607,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 72,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 93,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 19,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Radical hydrogen-boron reactor leapfrogs current nuclear fusion tech?\nhttps://news.ycombinator.com/item?id=22384870\n0 points · 0 comments\n\n### [HACKER NEWS] Chinese Tokamak reaches over 100M degrees\nhttps://news.ycombinator.com/item?id=18447835\n0 points · 0 comments\n\n### [HACKER NEWS] Dry-run experiments verify key aspect of Sandia nuclear fusion concept\nhttps://news.ycombinator.com/item?id=4541834\n0 points · 0 comments\n\n### [HACKER NEWS] ITER Tokamak: First Plasma Through High"
+    },
+    {
+      "query": "prompt caching anthropic",
+      "totalMs": 299,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 613,
+      "truncated": false,
+      "slicedLen": 613,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 25,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 298,
+          "bytes": 625,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 60,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 103,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 19,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Prompt Caching (Beta) – Anthropic\nhttps://docs.anthropic.com/en/docs/build-with-claude/prompt-caching?s=09\n3 points · 0 comments\n\n### [HACKER NEWS] Show HN: Magenta.nvim – AI coding plugin for Neovim focused on tool use\nhttps://github.com/dlants/magenta.nvim\n64 points · 8 comments\n\n### [HACKER NEWS] Show HN: Flemma – a Neovim plugin where the .chat buffer is the conversation\nhttps://news.ycombinator.com/item?id=47004647\n2 points · 0 comments\n\n### [HACKER NEWS] Prompt-caching – "
+    }
+  ]
+}
