@@ -166,6 +166,7 @@ export function openCombobox(cb) {
 export function closeCombobox() { if (modal) modal.hidden = true; }
 
 function buildModal() {
+  const el = document.createElement('div');
   el.className = 'modal-backdrop';
   el.innerHTML = `
     <div class="modal model-modal">
