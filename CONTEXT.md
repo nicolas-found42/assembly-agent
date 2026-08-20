@@ -45,8 +45,12 @@ The largest number of Tool Rounds one turn may spend (`MAX_TOOL_ROUNDS`, current
 _Avoid_: tool limit, max rounds, retry limit
 
 **Scanner**:
-The WAT code that reads the SSE stream and stages a pending Tool Call in the control block. Takes the first `function.name` it sees and concatenates every `arguments` fragment.
+The WAT code that reads the SSE stream and stages every Tool Call of the turn in the Tool Call Table. Walks each `tool_calls` line left to right: `"id":"` opens the next slot, `"name":"` and `"arguments":"` land on the slot open at that point.
 _Avoid_: parser, SSE reader, tokenizer
+
+**Tool Call Table**:
+The Scanner's per-turn staging area at `0x6800` — 8 slots of 256B, one per Tool Call, each holding id, name and its own `arguments` accumulator. Slot 0 aliases the legacy control slots so single-call readers are unchanged; a 9th call is dropped and counted in `tc_overflow`.
+_Avoid_: tool call array, slot array, call buffer
 
 **Sweep**:
 One run of `scripts/sweep-free-models.mjs`: the same task battery sent to every Free Model in turn, over the Proxy, with canned search results and every raw stream saved.

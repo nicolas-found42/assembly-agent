@@ -11,7 +11,8 @@
 ;;  │ 0x01000-0x4FFF │ SSE rem    │ line-remainder buffer (16 KiB)    │
 ;;  │ 0x05000-0x05FFF │ fold buf  │ query fold scratch (filters)      │
 ;;  │ 0x05FF0        │ cursor     │ SSE drop-line flag                │
-;;  │ 0x06000-0x607F │ tool meta  │ tcid[64] + name[64]               │
+;;  │ 0x06000-0x607F │ tool meta  │ tcid[64] + name[64] — tc slot 0   │
+;;  │ 0x06800-0x06FFF │ tc table  │ 8 tool call slots × 256B          │
 ;;  │ 0x08000-0x1FFFF │ History   │ 96 KiB bump arena                 │
 ;;  │ 0x20000-0x30FFF │ Models    │ count + 512×128B records          │
 ;;  │ 0x31000-0x3FFFF │ Pool      │ 60 KiB string bump                │
@@ -35,6 +36,7 @@
 ;;    0x54 cur_cap    0x58 ta_cap
 ;;    0x5C tr_ptr 0x60 tr_len 0x64 tr_cap   (tool result accum)
 ;;    0x68 active_table 0x6C filtered_count
+;;    0x70 tc_count   0x74 tc_overflow   (per-turn tool call table)
 ;; ═══════════════════════════════════════════════════════════════════════
 
 (module
@@ -81,11 +83,16 @@
   (global $cTrCap    i32 (i32.const 0x64))
   (global $cActTbl   i32 (i32.const 0x68))
   (global $cFilCnt   i32 (i32.const 0x6C))
+  (global $cTcCount  i32 (i32.const 0x70))
+  (global $cTcOvf    i32 (i32.const 0x74))
   (global $gRemBuf   i32 (i32.const 0x1000))
   (global $gFoldBuf  i32 (i32.const 0x5000))
   (global $gDrop     i32 (i32.const 0x5FF0))
   (global $gTcid     i32 (i32.const 0x6000))
   (global $gTcName   i32 (i32.const 0x6040))
+  (global $gTcTbl    i32 (i32.const 0x6800))
+  (global $gTcTblLen i32 (i32.const 0x800))
+  (global $gTcMax    i32 (i32.const 8))
   (global $gHistBase i32 (i32.const 0x8000))
   (global $gHistEnd  i32 (i32.const 0x20000))
   (global $gRecCnt   i32 (i32.const 0x20000))
@@ -352,6 +359,65 @@
     (i32.store (local.get $cs) (local.get $nc))
   )
 
+  ;; ═════════════════════ tool call table (0x6800) ═════════════════════
+  ;; 8 slots × 256B: id[64] name[64] argsPtr argsLen argsCap idLen nameLen.
+  ;; Slot 0's fields ALIAS the legacy control slots (gTcid/gTcName plus
+  ;; cTaPtr/cTaLen/cTaCap/cTcidLen/cTcNameLen) so every existing reader —
+  ;; pendingToolCall() in js/bridge.js, end_turn, tool_result_flush,
+  ;; test/smoke.mjs — keeps working while slots 1..7 hold the parallel calls.
+
+  (func $tc_slot (param $i i32) (result i32)
+    (i32.add (global.get $gTcTbl) (i32.mul (local.get $i) (i32.const 256))))
+  (func $tc_id (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $gTcid))))
+    (call $tc_slot (local.get $i)))
+  (func $tc_name (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $gTcName))))
+    (i32.add (call $tc_slot (local.get $i)) (i32.const 64)))
+  (func $tc_args_ptr (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $cTaPtr))))
+    (i32.add (call $tc_slot (local.get $i)) (i32.const 128)))
+  (func $tc_args_len (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $cTaLen))))
+    (i32.add (call $tc_slot (local.get $i)) (i32.const 132)))
+  (func $tc_args_cap (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $cTaCap))))
+    (i32.add (call $tc_slot (local.get $i)) (i32.const 136)))
+  (func $tc_id_len (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $cTcidLen))))
+    (i32.add (call $tc_slot (local.get $i)) (i32.const 140)))
+  (func $tc_name_len (param $i i32) (result i32)
+    (if (i32.eqz (local.get $i)) (then (return (global.get $cTcNameLen))))
+    (i32.add (call $tc_slot (local.get $i)) (i32.const 144)))
+
+  ;; $tc_open — the slot `"name":"` and `"arguments":"` land on: the last
+  ;; `"id":"` opened, or slot 0 before any id arrives (a provider may stream
+  ;; arguments first). -1 once the table has overflowed, so calls past the
+  ;; 8th are dropped instead of being appended onto the 8th.
+  (func $tc_open (result i32)
+    (if (i32.gt_u (i32.load (global.get $cTcOvf)) (i32.const 0))
+      (then (return (i32.const -1))))
+    (if (i32.eqz (i32.load (global.get $cTcCount))) (then (return (i32.const 0))))
+    (i32.sub (i32.load (global.get $cTcCount)) (i32.const 1)))
+
+  ;; $tc_reset — clear the table, both counters, and slot 0's aliases
+  (func $tc_reset
+    (memory.fill (global.get $gTcTbl) (i32.const 0) (global.get $gTcTblLen))
+    (i32.store (global.get $cTcCount) (i32.const 0))
+    (i32.store (global.get $cTcOvf) (i32.const 0))
+    (i32.store (global.get $cTcidLen) (i32.const 0))
+    (i32.store (global.get $cTcNameLen) (i32.const 0))
+    (i32.store (global.get $cTaPtr) (i32.const 0))
+    (i32.store (global.get $cTaLen) (i32.const 0))
+    (i32.store (global.get $cTaCap) (i32.const 0)))
+
+  ;; $tc_store — copy a decoded value (clamped to 64B) into a slot field
+  (func $tc_store (param $dst i32) (param $lenAddr i32) (param $src i32) (param $dlen i32)
+    (local $n i32)
+    (local.set $n (select (local.get $dlen) (i32.const 64) (i32.lt_u (local.get $dlen) (i32.const 64))))
+    (memory.copy (local.get $dst) (local.get $src) (local.get $n))
+    (i32.store (local.get $lenAddr) (local.get $n)))
+
   ;; $fold — ASCII case-fold one byte
   (func $fold (param $b i32) (result i32)
     (if (i32.and (i32.ge_s (local.get $b) (i32.const 65)) (i32.le_s (local.get $b) (i32.const 90)))
@@ -598,11 +664,7 @@
     (i32.store (global.get $cCurPtr) (i32.const 0))
     (i32.store (global.get $cCurLen) (i32.const 0))
     (i32.store (global.get $cCurCap) (i32.const 0))
-    (i32.store (global.get $cTaPtr) (i32.const 0))
-    (i32.store (global.get $cTaLen) (i32.const 0))
-    (i32.store (global.get $cTaCap) (i32.const 0))
-    (i32.store (global.get $cTcidLen) (i32.const 0))
-    (i32.store (global.get $cTcNameLen) (i32.const 0))
+    (call $tc_reset)
     (i32.store (global.get $cTrPtr) (i32.const 0))
     (i32.store (global.get $cTrLen) (i32.const 0))
     (i32.store (global.get $cTrCap) (i32.const 0))
@@ -650,8 +712,10 @@
   (func $process_line (param $ptr i32) (param $len i32)
     (local $pay i32) (local $plen i32) (local $end i32) (local $off i32)
     (local $ep i32) (local $mp i32) (local $dp i32) (local $cp i32) (local $tp i32)
-    (local $s i32) (local $e i32) (local $n i32) (local $dlen i32)
+    (local $s i32) (local $e i32) (local $dlen i32)
     (local $rem i32) (local $ap i32) (local $hp i32) (local $lim i32)
+    (local $pid i32) (local $pnm i32) (local $parg i32)
+    (local $best i32) (local $kind i32) (local $slot i32)
     ;; strip trailing CR
     (if (i32.and (i32.gt_u (local.get $len) (i32.const 0))
                  (i32.eq (i32.load8_u (i32.add (local.get $ptr) (i32.sub (local.get $len) (i32.const 1)))) (i32.const 13)))
@@ -702,58 +766,98 @@
     (local.set $tp (call $find (local.get $pay) (local.get $plen) (i32.const 0x70040) (i32.const 12)))
     (if (i32.lt_s (local.get $dp) (i32.const 0))
       (then (if (i32.lt_s (local.get $tp) (i32.const 0)) (then (return)))))
-    ;; tool_calls processing first (decode writes stay inside its region)
+    ;; ── tool_calls: one left-to-right walk from $tp to end of line ──
+    ;; Needles are handled in the order they appear, never per needle kind, so
+    ;; a provider that packs several complete calls onto one line behaves the
+    ;; same as one that streams a fragment per line. `"id":"` opens the next
+    ;; slot; `"name":"` and `"arguments":"` land on the slot open at that
+    ;; point. The walk starts at $tp so the chunk's own outer `"id"` — which
+    ;; sits before "tool_calls" on every observed line — is never mistaken for
+    ;; a call id. $decode_inplace shrinks each value in place; advancing to
+    ;; $e + 1 steps over the stale tail as well as the closing quote, so the
+    ;; leftovers can never be re-scanned as a needle.
+    ;; (Runs before the delta-content branch: decode writes stay in this region.)
     (if (i32.ge_s (local.get $tp) (i32.const 0))
       (then
-        ;; first-seen tool call id
-        (if (i32.eqz (i32.load (global.get $cTcidLen)))
-          (then
-            (local.set $ap (call $find (local.get $tp) (i32.sub (local.get $end) (local.get $tp)) (i32.const 0x70050) (i32.const 6)))
-            (if (i32.ge_s (local.get $ap) (i32.const 0))
-              (then
-                (local.set $s (i32.add (local.get $ap) (i32.const 6)))
-                (local.set $e (call $scan_quote (local.get $s) (local.get $end)))
-                (local.set $dlen (call $decode_inplace (local.get $s) (local.get $e)))
-                (local.set $n (select (local.get $dlen) (i32.const 64) (i32.lt_u (local.get $dlen) (i32.const 64))))
-                (memory.copy (global.get $gTcid) (local.get $s) (local.get $n))
-                (i32.store (global.get $cTcidLen) (local.get $n))))))
-        ;; first-seen function name
-        (if (i32.eqz (i32.load (global.get $cTcNameLen)))
-          (then
-            (local.set $ap (call $find (local.get $tp) (i32.sub (local.get $end) (local.get $tp)) (i32.const 0x70060) (i32.const 8)))
-            (if (i32.ge_s (local.get $ap) (i32.const 0))
-              (then
-                (local.set $s (i32.add (local.get $ap) (i32.const 8)))
-                (local.set $e (call $scan_quote (local.get $s) (local.get $end)))
-                (local.set $dlen (call $decode_inplace (local.get $s) (local.get $e)))
-                (local.set $n (select (local.get $dlen) (i32.const 64) (i32.lt_u (local.get $dlen) (i32.const 64))))
-                (memory.copy (global.get $gTcName) (local.get $s) (local.get $n))
-                (i32.store (global.get $cTcNameLen) (local.get $n))))))
-        ;; every arguments fragment
         (local.set $ap (local.get $tp))
-        (block $args (loop $al
+        (block $tcw (loop $tcl
           (local.set $rem (i32.sub (local.get $end) (local.get $ap)))
-          (if (i32.le_s (local.get $rem) (i32.const 13)) (then (return)))
-          (local.set $ap (call $find (local.get $ap) (local.get $rem) (i32.const 0x70070) (i32.const 13)))
-          (if (i32.lt_s (local.get $ap) (i32.const 0)) (then (return)))
-          (local.set $s (i32.add (local.get $ap) (i32.const 13)))
+          (br_if $tcw (i32.le_s (local.get $rem) (i32.const 0)))
+          (local.set $pid  (call $find (local.get $ap) (local.get $rem) (i32.const 0x70050) (i32.const 6)))
+          (local.set $pnm  (call $find (local.get $ap) (local.get $rem) (i32.const 0x70060) (i32.const 8)))
+          (local.set $parg (call $find (local.get $ap) (local.get $rem) (i32.const 0x70070) (i32.const 13)))
+          ;; earliest needle wins; kind 0 means none left on this line
+          (local.set $best (i32.const -1))
+          (local.set $kind (i32.const 0))
+          (if (i32.ge_s (local.get $pid) (i32.const 0))
+            (then (local.set $best (local.get $pid)) (local.set $kind (i32.const 1))))
+          (if (i32.and (i32.ge_s (local.get $pnm) (i32.const 0))
+                       (i32.or (i32.lt_s (local.get $best) (i32.const 0))
+                               (i32.lt_u (local.get $pnm) (local.get $best))))
+            (then (local.set $best (local.get $pnm)) (local.set $kind (i32.const 2))))
+          (if (i32.and (i32.ge_s (local.get $parg) (i32.const 0))
+                       (i32.or (i32.lt_s (local.get $best) (i32.const 0))
+                               (i32.lt_u (local.get $parg) (local.get $best))))
+            (then (local.set $best (local.get $parg)) (local.set $kind (i32.const 3))))
+          (br_if $tcw (i32.eqz (local.get $kind)))
+          ;; value body sits right after the needle: 6 / 8 / 13 bytes
+          (local.set $s (i32.add (local.get $best)
+            (select (i32.const 6)
+                    (select (i32.const 8) (i32.const 13) (i32.eq (local.get $kind) (i32.const 2)))
+                    (i32.eq (local.get $kind) (i32.const 1)))))
           (local.set $e (call $scan_quote (local.get $s) (local.get $end)))
           (local.set $dlen (call $decode_inplace (local.get $s) (local.get $e)))
-          (if (i32.gt_u (local.get $dlen) (i32.const 0))
-            (then (call $accum_append (global.get $cTaPtr) (global.get $cTaLen) (global.get $cTaCap)
-                                     (local.get $s) (local.get $dlen))))
+          ;; "id" — open the next slot. An empty id can key no role-3 entry, so
+          ;; it opens nothing and leaves tool_pending false, as before the table.
+          (if (i32.and (i32.eq (local.get $kind) (i32.const 1)) (i32.gt_u (local.get $dlen) (i32.const 0)))
+            (then
+              (if (i32.ge_u (i32.load (global.get $cTcCount)) (global.get $gTcMax))
+                (then
+                  (i32.store (global.get $cTcOvf)
+                    (i32.add (i32.load (global.get $cTcOvf)) (i32.const 1))))
+                (else
+                  (local.set $slot (i32.load (global.get $cTcCount)))
+                  (i32.store (global.get $cTcCount) (i32.add (local.get $slot) (i32.const 1)))
+                  (call $tc_store (call $tc_id (local.get $slot)) (call $tc_id_len (local.get $slot))
+                                  (local.get $s) (local.get $dlen))))))
+          ;; "name" — first name wins for the open slot
+          (if (i32.eq (local.get $kind) (i32.const 2))
+            (then
+              (local.set $slot (call $tc_open))
+              (if (i32.ge_s (local.get $slot) (i32.const 0))
+                (then
+                  (if (i32.eqz (i32.load (call $tc_name_len (local.get $slot))))
+                    (then
+                      (call $tc_store (call $tc_name (local.get $slot)) (call $tc_name_len (local.get $slot))
+                                      (local.get $s) (local.get $dlen))))))))
+          ;; "arguments" — append the fragment to the open slot's accumulator
+          (if (i32.eq (local.get $kind) (i32.const 3))
+            (then
+              (local.set $slot (call $tc_open))
+              (if (i32.and (i32.ge_s (local.get $slot) (i32.const 0))
+                           (i32.gt_u (local.get $dlen) (i32.const 0)))
+                (then
+                  (call $accum_append
+                    (call $tc_args_ptr (local.get $slot))
+                    (call $tc_args_len (local.get $slot))
+                    (call $tc_args_cap (local.get $slot))
+                    (local.get $s) (local.get $dlen))))))
           (local.set $ap (i32.add (local.get $e) (i32.const 1)))
-          (br_if $args (i32.lt_u (local.get $ap) (local.get $end)))
+          (br $tcl)
         ))
     ))
-    ;; delta content — bounded to [dp, tp) so decoded tool args can't fool it
+    ;; delta content — bounded to [dp, tp) so decoded tool args can't fool it.
+    ;; Only clamp when "tool_calls" sits AFTER "delta": a line that carries the
+    ;; string as a finish_reason value ahead of the delta would otherwise make
+    ;; $rem negative, and $find reads it unsigned.
     (if (i32.ge_s (local.get $dp) (i32.const 0))
       (then
         (local.set $lim (local.get $end))
-        (if (i32.and (i32.ge_s (local.get $tp) (i32.const 0)) (i32.lt_u (local.get $tp) (local.get $end)))
+        (if (i32.and (i32.gt_u (local.get $tp) (local.get $dp))
+                     (i32.lt_u (local.get $tp) (local.get $end)))
           (then (local.set $lim (local.get $tp))))
         (local.set $rem (i32.sub (local.get $lim) (local.get $dp)))
-        (if (i32.gt_u (local.get $rem) (i32.const 10))
+        (if (i32.gt_s (local.get $rem) (i32.const 10))
           (then
             (local.set $cp (call $find (local.get $dp) (local.get $rem) (i32.const 0x70030) (i32.const 11)))
             (if (i32.ge_s (local.get $cp) (i32.const 0))
@@ -839,7 +943,28 @@
   )
 
   (func (export "tool_pending") (result i32)
-    (i32.gt_u (i32.load (global.get $cTcidLen)) (i32.const 0))
+    (i32.gt_u (i32.load (global.get $cTcCount)) (i32.const 0))
+  )
+
+  ;; tc_count — tool calls staged this turn (0..8; extras counted in cTcOvf)
+  (func (export "tc_count") (result i32) (i32.load (global.get $cTcCount)))
+
+  ;; tc_get — write 6×i32 {idPtr,idLen,namePtr,nameLen,argsPtr,argsLen}
+  (func (export "tc_get") (param $i i32) (param $out i32)
+    (if (i32.ge_u (local.get $i) (i32.load (global.get $cTcCount)))
+      (then
+        (memory.fill (local.get $out) (i32.const 0) (i32.const 24))
+        (return)))
+    (i32.store (local.get $out) (call $tc_id (local.get $i)))
+    (i32.store (i32.add (local.get $out) (i32.const 4))
+      (i32.load (call $tc_id_len (local.get $i))))
+    (i32.store (i32.add (local.get $out) (i32.const 8)) (call $tc_name (local.get $i)))
+    (i32.store (i32.add (local.get $out) (i32.const 12))
+      (i32.load (call $tc_name_len (local.get $i))))
+    (i32.store (i32.add (local.get $out) (i32.const 16))
+      (i32.load (call $tc_args_ptr (local.get $i))))
+    (i32.store (i32.add (local.get $out) (i32.const 20))
+      (i32.load (call $tc_args_len (local.get $i))))
   )
 
   (func (export "tool_result_append") (param $ptr i32) (param $len i32)
