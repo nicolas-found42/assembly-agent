@@ -2,6 +2,8 @@
 
 **Summary (one paragraph):** Live fan-out of `js/search.js` `webSearch` (5 keyless + 3 keyed skipped) was measured from Node `v26.7.0` (no CORS) over 20 mixed queries (tech/science/code — e.g. "WebAssembly SIMD", "CRISPR prime editing", "fusion tokamak ITER"; full list in `test/fixtures/baseline-search.json`) through the identical `timed`/`jfetch`/`fmt` pipeline with 8 s abort, dedup by normalized first-URL, and 12 k slice, driven by `test/baseline-search.mjs` at ~600 ms inter-query spacing. Aggregate wall time p50 260 ms / p95 815 ms (avg 321 ms); average 2.5 contributing sources per query and 1,873 bytes pre-slice (max 8,060, zero queries truncated), dedup hit 0.05/query. The run exposes the baseline's dominant risk: unauthenticated rate limits collapse throughput mid-burst — Wikipedia returned 429 for the last 11/20 queries and GitHub 403 for the last 10/20 (both healthy for the first ~10), so their 20-query success rates are 45 % and 50 % respectively, while HN, StackExchange and DDG stayed at 100 %; DDG was almost always empty (95 % empty, only one abstract hit), StackExchange 35 % empty, HN the only fully reliable source. Without burst throttling or keyed fallbacks, half the fan-out is unavailable under realistic usage and average markdown is thin (~1.9 k), making SLO and ranking work dependent on mitigating rate limits and replacing DDG's low yield.
 
+**Replication (run 2, 2026-08-20T20:40Z, same harness/machine ~1 h later):** the run was repeated to separate stable properties from single-sample noise. Two results are deterministic and two are not. **GitHub's collapse is exactly reproducible** — 10 successes then `403` from query 11 onward in *both* runs, which identifies the cause precisely: the unauthenticated Search API cap of 10 requests/minute, and the harness's own 600 ms spacing packs all 20 queries into ~17 s, i.e. one quota window. **Wikipedia's is not** — 45 % (first `429` at query 10) in run 1 versus 90 % (first `429` at query 19) in run 2, so the anon Wikipedia limit depends on residual quota at start-of-run and the "45 %" figure below is one sample, not a rate. Everything else replicated exactly: HN 100 %, DDG 100 %/95 % empty (same single abstract hit), StackExchange 100 %/35 % empty (same 7 queries), dedup 1 hit total, 0/20 truncated, and identical per-source median bytes. Conclusion for downstream work: **treat the GitHub cap as a hard, predictable ceiling to design around, and Wikipedia's failure rate as a variable to measure again under real traffic — not as 45 %.**
+
 ## Per-source table (20 queries, 2026-08-20T19:42Z, Node direct)
 
 | Source | Keyless? | Attempted | Skipped | Success | Empty (ok but 0 hits) | p50 (ok) | p95 (ok) | avg (all) | p50 bytes | p95 bytes | avg bytes | min–max bytes | Failures (sample) |
@@ -53,4 +55,53 @@
 node test/baseline-search.mjs   # writes test/fixtures/baseline-search.json
 # with keys:
 TAVILY_KEY=… BRAVE_KEY=… JINA_KEY=… node test/baseline-search.mjs
+```
+
+## Replication — run 2 (2026-08-20T20:40Z)
+
+Same harness, same 20 queries, same machine, no keys. Raw data: `test/fixtures/baseline-search-run2.json`.
+
+| Metric | Run 1 (19:42Z) | Run 2 (20:40Z) | Stable? |
+|---|---:|---:|---|
+| Wall p50 | 260 ms | 307 ms | ~ (run-to-run jitter) |
+| Wall p95 (interpolated) | 558 ms | 377 ms | ~ |
+| Wall avg | 321 ms | 297 ms | yes |
+| Sources contributing / query | 2.50 | 2.95 | tracks Wikipedia's success rate |
+| Bytes before slice (avg / max) | 1,873 / 8,060 | 2,198 / 8,038 | yes |
+| Queries truncated at 12 k | 0/20 | 0/20 | **yes** |
+| Dedup hits (total) | 1 | 1 | **yes** |
+| wikipedia success | 45 % (first fail q10) | **90 %** (first fail q19) | **no — variable** |
+| hn success | 100 % | 100 % | **yes** |
+| ddg success / empty | 100 % / 95 % | 100 % / 95 % | **yes** |
+| stackexchange success / empty | 100 % / 35 % | 100 % / 35 % | **yes** |
+| github success | 50 % (first fail q11) | 50 % (first fail q11) | **yes — deterministic cap** |
+
+Run-2 per-source latency (ok only): wikipedia p50 278 ms / p95ᵢ 380 ms · hn 278 / 375 · ddg 108 / 189 · stackexchange 143 / 217 · github 262 / 306. Total run wall clock 17.4 s for 20 queries.
+
+**The GitHub number is the actionable one.** 10-then-403, twice, at the same query index, is the documented unauthenticated `search/repositories` limit of 10 req/min. It is not flakiness and it will not improve with retries: any burst above 10 searches/minute from one egress IP loses GitHub entirely. Per the Worker column above, a Cloudflare Worker shares one egress IP across *all* users, so in the deployed topology this ceiling is global, not per-visitor — roughly 10 searches per minute for the entire deployment before GitHub drops out of every user's results.
+
+## Correction to run-1 reporting — the "p95" column
+
+The harness computes `p95` as `sorted[Math.floor(n * 0.95)]`. For n ≤ 20 that index is `n − 1`, so **the reported p95 is simply the maximum observation**, not a 95th percentile. This affects only presentation, not the raw data (`results[]` in both fixtures holds every per-source measurement).
+
+Corrected wall-time figures using linear interpolation:
+
+| | Run 1 | Run 2 |
+|---|---:|---:|
+| p95 as reported (= max) | 815 ms | 404 ms |
+| p95 interpolated | **558 ms** | **377 ms** |
+
+Per-source interpolated p95 (ok only), run 1: wikipedia 706 ms, hn 306 ms, ddg 161 ms, stackexchange 225 ms, github 370 ms. **Any latency SLO should be set against ~560 ms, not 815 ms** — but note that at n=20 neither estimate is well-resolved in the tail; a burst-realistic SLO wants a run with more queries and production-like spacing.
+
+## Verification of this report
+
+Both fixtures were re-derived independently of the harness's own aggregate block: every headline number in the run-1 summary above (wall p50 260 / avg 321, 2.50 sources/query, 1,873 avg bytes, max 8,060, 0 truncated, 1 dedup hit, failure counts `wikipedia:11 github:10`, and all five per-source success/empty rates) recomputes exactly from `results[]`. The two items flagged for correction — the p95 estimator and Wikipedia's variability — are the only discrepancies found.
+
+## Reproduce (run 2)
+
+```bash
+node test/baseline-search.mjs   # overwrites test/fixtures/baseline-search.json
+# run from a scratch cwd to keep committed fixtures intact, then move the output alongside:
+#   test/fixtures/baseline-search.json       (run 1)
+#   test/fixtures/baseline-search-run2.json  (run 2)
 ```

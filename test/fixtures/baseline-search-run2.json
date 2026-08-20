@@ -1,0 +1,1532 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-20T20:40:11.047Z",
+    "nodeVersion": "v26.7.0",
+    "timeoutMs": 8000,
+    "queries": [
+      "WebAssembly SIMD",
+      "CRISPR prime editing",
+      "Rust borrow checker",
+      "quantum error correction surface code",
+      "React Server Components",
+      "black hole information paradox",
+      "TypeScript 5.5 decorators",
+      "mRNA vaccine stability",
+      "Kubernetes sidecar pattern",
+      "large language model quantization",
+      "gravitational wave detection LIGO",
+      "WASI preview 2",
+      "perovskite solar cell efficiency",
+      "SQLite WAL mode",
+      "protein folding AlphaFold 3",
+      "WebGPU compute shaders",
+      "dark matter direct detection",
+      "Bun runtime vs Node",
+      "fusion tokamak ITER",
+      "prompt caching anthropic"
+    ],
+    "note": "Live fan-out via Node timed/jfetch/fmt pipeline mirroring js/search.js; keyed sources skipped when env keys absent; 600ms inter-query delay.",
+    "env": "node-direct (no CORS enforcement); browser vs Worker differences noted in markdown report"
+  },
+  "totals": {
+    "queries": 20,
+    "avgTotalMs": 297,
+    "p50TotalMs": 307,
+    "p95TotalMs": 404,
+    "avgSourcesPerQuery": 2.95,
+    "avgTotalBeforeSlice": 2198,
+    "maxBeforeSlice": 8038,
+    "truncatedQueries": 0,
+    "totalDedupHits": 1,
+    "avgDedupHits": 0.05,
+    "failureFrequency": {
+      "wikipedia": 2,
+      "hn": 0,
+      "ddg": 0,
+      "stackexchange": 0,
+      "github": 10,
+      "tavily": 0,
+      "brave": 0,
+      "jina": 0
+    }
+  },
+  "bySource": {
+    "wikipedia": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 0.9,
+      "emptyRate": 0,
+      "p50_ms": 278,
+      "p95_ms": 404,
+      "p50_all_ms": 269,
+      "p95_all_ms": 404,
+      "avg_ms": 261,
+      "avg_bytes": 725,
+      "p50_bytes": 720,
+      "p95_bytes": 775,
+      "min_bytes": 665,
+      "max_bytes": 775,
+      "failures": [
+        "429",
+        "429"
+      ]
+    },
+    "hn": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 1,
+      "emptyRate": 0.05,
+      "p50_ms": 278,
+      "p95_ms": 377,
+      "p50_all_ms": 278,
+      "p95_all_ms": 377,
+      "avg_ms": 278,
+      "avg_bytes": 613,
+      "p50_bytes": 588,
+      "p95_bytes": 818,
+      "min_bytes": 490,
+      "max_bytes": 818,
+      "failures": []
+    },
+    "ddg": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 1,
+      "emptyRate": 0.95,
+      "p50_ms": 108,
+      "p95_ms": 232,
+      "p50_all_ms": 108,
+      "p95_all_ms": 232,
+      "avg_ms": 124,
+      "avg_bytes": 1827,
+      "p50_bytes": 1827,
+      "p95_bytes": 1827,
+      "min_bytes": 1827,
+      "max_bytes": 1827,
+      "failures": []
+    },
+    "stackexchange": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 1,
+      "emptyRate": 0.35,
+      "p50_ms": 143,
+      "p95_ms": 232,
+      "p50_all_ms": 143,
+      "p95_all_ms": 232,
+      "avg_ms": 147,
+      "avg_bytes": 509,
+      "p50_bytes": 612,
+      "p95_bytes": 927,
+      "min_bytes": 165,
+      "max_bytes": 927,
+      "failures": []
+    },
+    "github": {
+      "attempted": 20,
+      "skipped": 0,
+      "successRate": 0.5,
+      "emptyRate": 0.05,
+      "p50_ms": 262,
+      "p95_ms": 322,
+      "p50_all_ms": 228,
+      "p95_all_ms": 322,
+      "avg_ms": 154,
+      "avg_bytes": 1440,
+      "p50_bytes": 740,
+      "p95_bytes": 6749,
+      "min_bytes": 652,
+      "max_bytes": 6749,
+      "failures": [
+        "403",
+        "403",
+        "403",
+        "403",
+        "403"
+      ]
+    },
+    "tavily": {
+      "attempted": 0,
+      "skipped": 20,
+      "successRate": null,
+      "emptyRate": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p50_all_ms": null,
+      "p95_all_ms": null,
+      "avg_ms": null,
+      "avg_bytes": null,
+      "p50_bytes": null,
+      "p95_bytes": null,
+      "min_bytes": null,
+      "max_bytes": null,
+      "failures": []
+    },
+    "brave": {
+      "attempted": 0,
+      "skipped": 20,
+      "successRate": null,
+      "emptyRate": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p50_all_ms": null,
+      "p95_all_ms": null,
+      "avg_ms": null,
+      "avg_bytes": null,
+      "p50_bytes": null,
+      "p95_bytes": null,
+      "min_bytes": null,
+      "max_bytes": null,
+      "failures": []
+    },
+    "jina": {
+      "attempted": 0,
+      "skipped": 20,
+      "successRate": null,
+      "emptyRate": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p50_all_ms": null,
+      "p95_all_ms": null,
+      "avg_ms": null,
+      "avg_bytes": null,
+      "p50_bytes": null,
+      "p95_bytes": null,
+      "min_bytes": null,
+      "max_bytes": null,
+      "failures": []
+    }
+  },
+  "results": [
+    {
+      "query": "WebAssembly SIMD",
+      "totalMs": 350,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2695,
+      "truncated": false,
+      "slicedLen": 2695,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 251,
+          "bytes": 715,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 318,
+          "bytes": 537,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 165,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 216,
+          "bytes": 726,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 322,
+          "bytes": 743,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Single instruction, multiple data\nhttps://en.wikipedia.org/wiki/Single_instruction%2C_multiple_data\nautovectoring, when compiling C or C++ to WebAssembly, can target WebAssembly SIMD to automatically make use of SIMD, while SIMD intrinsic are also available. It\n\n### [WIKIPEDIA] WebAssembly\nhttps://en.wikipedia.org/wiki/WebAssembly\nWebAssembly 2.0 specification was finished in 2022 and became a W3C standard in December 2024. It adds many single instruction, multiple data (SIMD)\n\n#"
+    },
+    {
+      "query": "CRISPR prime editing",
+      "totalMs": 251,
+      "sources": 3,
+      "failures": [],
+      "totalBeforeSlice": 2148,
+      "truncated": false,
+      "slicedLen": 2148,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 243,
+          "bytes": 720,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 229,
+          "bytes": 750,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 81,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 95,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": true,
+          "ms": 247,
+          "bytes": 713,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] CRISPR gene editing\nhttps://en.wikipedia.org/wiki/CRISPR_gene_editing\nCRISPR gene editing (/ˈkrɪspər/; pronounced like &quot;crisper&quot;; an abbreviation for &quot;clustered regularly interspaced short palindromic repeats&quot;) is a genetic\n\n### [WIKIPEDIA] CRISPR\nhttps://en.wikipedia.org/wiki/CRISPR\nwith CRISPR sequences form the basis of a technology known as CRISPR-Cas9 that can be used to edit genes within living organisms. This editing process\n\n### [WIKIPEDIA] Prime editi"
+    },
+    {
+      "query": "Rust borrow checker",
+      "totalMs": 250,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2647,
+      "truncated": false,
+      "slicedLen": 2647,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 233,
+          "bytes": 757,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 231,
+          "bytes": 652,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 81,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 130,
+          "bytes": 612,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 248,
+          "bytes": 652,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Rust (programming language)\nhttps://en.wikipedia.org/wiki/Rust_(programming_language)\nprevented by the &quot;borrow checker&quot;, which tracks the object lifetime of references at compile time. Software developer Graydon Hoare created Rust in 2006 while\n\n### [WIKIPEDIA] Rust compiler\nhttps://en.wikipedia.org/wiki/Rust_compiler\ncontrol-flow graph specifically designed to execute the language&#039;s borrow checker and run Rust-specific optimizations, such as removing dead code, be"
+    },
+    {
+      "query": "quantum error correction surface code",
+      "totalMs": 307,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2692,
+      "truncated": false,
+      "slicedLen": 2692,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 263,
+          "bytes": 775,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 306,
+          "bytes": 551,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 72,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 117,
+          "bytes": 369,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 262,
+          "bytes": 1021,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Quantum error correction\nhttps://en.wikipedia.org/wiki/Quantum_error_correction\nQuantum error correction (QEC) comprises a set of techniques used in quantum memory and quantum computing to protect quantum information from errors arising\n\n### [WIKIPEDIA] Surface code\nhttps://en.wikipedia.org/wiki/Surface_code\nThe surface code is a topological quantum error correcting code, and an example of a stabilizer code, defined on a two-dimensional spin lattice. The first\n\n### [WIKIPEDIA] No"
+    },
+    {
+      "query": "React Server Components",
+      "totalMs": 291,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2844,
+      "truncated": false,
+      "slicedLen": 2844,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 238,
+          "bytes": 687,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 291,
+          "bytes": 714,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 157,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 157,
+          "bytes": 760,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 232,
+          "bytes": 709,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] React (software)\nhttps://en.wikipedia.org/wiki/React_(software)\nHooks, which may call other Hooks. React Server Components (RSC) are function components that run exclusively on the server. The concept was first introduced\n\n### [WIKIPEDIA] Next.js\nhttps://en.wikipedia.org/wiki/Next.js\nprivate company Vercel providing React-based web applications with server-side rendering and static rendering. React documentation mentions Next.js among\n\n### [WIKIPEDIA] SharePoint\nhttps://en.wikipe"
+    },
+    {
+      "query": "black hole information paradox",
+      "totalMs": 273,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2690,
+      "truncated": false,
+      "slicedLen": 2690,
+      "dedup": {
+        "before": 5,
+        "after": 4,
+        "hits": 1
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 251,
+          "bytes": 772,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 202,
+          "bytes": 818,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 91,
+          "bytes": 1827,
+          "error": null,
+          "skipped": false
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 122,
+          "bytes": 209,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 271,
+          "bytes": 913,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Black hole information paradox\nhttps://en.wikipedia.org/wiki/Black_hole_information_paradox\nThe black hole information paradox is an unsolved problem in physics and a paradox that appears when the predictions of quantum mechanics and general relativity\n\n### [WIKIPEDIA] Black hole complementarity\nhttps://en.wikipedia.org/wiki/Black_hole_complementarity\nBlack hole complementarity is a conjectured solution to the black hole information paradox, proposed by Leonard Susskind, Lárus Th"
+    },
+    {
+      "query": "TypeScript 5.5 decorators",
+      "totalMs": 334,
+      "sources": 2,
+      "failures": [],
+      "totalBeforeSlice": 906,
+      "truncated": false,
+      "slicedLen": 906,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 334,
+          "bytes": 736,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 278,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 153,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 191,
+          "bytes": 179,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 221,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] TypeScript\nhttps://en.wikipedia.org/wiki/TypeScript\nTypeScript (TS) is a high-level programming language that adds static typing with optional type annotations to JavaScript. It is designed for developing\n\n### [WIKIPEDIA] AtScript\nhttps://en.wikipedia.org/wiki/AtScript\npure TypeScript. The name “AtScript” comes from the @ “at” symbol used for annotations in many languages (e.g. Java annotations and Python decorators). &quot;Angular\n\n### [WIKIPEDIA] Furiosa: A Mad Max Saga\nhttps:/"
+    },
+    {
+      "query": "mRNA vaccine stability",
+      "totalMs": 279,
+      "sources": 3,
+      "failures": [],
+      "totalBeforeSlice": 8038,
+      "truncated": false,
+      "slicedLen": 8038,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 278,
+          "bytes": 715,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 277,
+          "bytes": 604,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 79,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 118,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": true,
+          "ms": 277,
+          "bytes": 6749,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] MRNA vaccine\nhttps://en.wikipedia.org/wiki/MRNA_vaccine\nAn mRNA vaccine is a type of vaccine that uses a copy of a molecule called messenger RNA (mRNA) to produce an immune response. The vaccine delivers molecules\n\n### [WIKIPEDIA] Self-amplifying RNA\nhttps://en.wikipedia.org/wiki/Self-amplifying_RNA\nresponse, making it a promising tool for vaccines and other therapeutic applications. As a &quot;next-generation&quot; mRNA, saRNA is designed to achieve greater protein\n\n### [WIKIPED"
+    },
+    {
+      "query": "Kubernetes sidecar pattern",
+      "totalMs": 230,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2835,
+      "truncated": false,
+      "slicedLen": 2835,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 177,
+          "bytes": 672,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 228,
+          "bytes": 542,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 71,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 113,
+          "bytes": 927,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 228,
+          "bytes": 722,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Sidecar proxy\nhttps://en.wikipedia.org/wiki/Sidecar_proxy\nSidecar proxy is a design pattern in software architecture that uses a proxy server next to an application, usually on the same host or in the same container\n\n### [WIKIPEDIA] Microservices\nhttps://en.wikipedia.org/wiki/Microservices\nreverse proxy server, called a service proxy, sidecar proxy, or sidecar. The service instance and sidecar proxy share a container, and the containers are\n\n### [WIKIPEDIA] Dapr\nhttps://en.wikipe"
+    },
+    {
+      "query": "large language model quantization",
+      "totalMs": 404,
+      "sources": 4,
+      "failures": [],
+      "totalBeforeSlice": 2716,
+      "truncated": false,
+      "slicedLen": 2716,
+      "dedup": {
+        "before": 4,
+        "after": 4,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 404,
+          "bytes": 750,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 377,
+          "bytes": 532,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 81,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 125,
+          "bytes": 717,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": true,
+          "ms": 287,
+          "bytes": 740,
+          "error": null,
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Large language model\nhttps://en.wikipedia.org/wiki/Large_language_model\nA large language model (LLM) is an AI model (typically a neural network) trained on a vast amount of text for natural language processing tasks, especially\n\n### [WIKIPEDIA] 1.58-bit large language model\nhttps://en.wikipedia.org/wiki/1.58-bit_large_language_model\nA 1.58-bit large language model (also known as a ternary LLM) is a type of large language model (LLM) designed to be computationally efficient. It ac"
+    },
+    {
+      "query": "gravitational wave detection LIGO",
+      "totalMs": 376,
+      "sources": 3,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1392,
+      "truncated": false,
+      "slicedLen": 1392,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 376,
+          "bytes": 713,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 375,
+          "bytes": 522,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 81,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 112,
+          "bytes": 165,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 26,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] LIGO\nhttps://en.wikipedia.org/wiki/LIGO\nInterferometer Gravitational-Wave Observatory (LIGO) is a large-scale physics experiment and observatory designed to detect cosmic gravitational waves. Prior\n\n### [WIKIPEDIA] Gravitational wave\nhttps://en.wikipedia.org/wiki/Gravitational_wave\nfirst detection of gravitational waves in 2015. Currently, the most sensitive is LIGO – the Laser Interferometer Gravitational Wave Observatory. LIGO has\n\n### [WIKIPEDIA] Gravitational-wave astronomy\nh"
+    },
+    {
+      "query": "WASI preview 2",
+      "totalMs": 339,
+      "sources": 2,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1200,
+      "truncated": false,
+      "slicedLen": 1200,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 269,
+          "bytes": 716,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 338,
+          "bytes": 490,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 108,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 143,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 38,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] WebAssembly\nhttps://en.wikipedia.org/wiki/WebAssembly\nWASI 0.2 defines a CLI world similar to the POSIX-like API of WASI 0.1, and an HTTP proxy world for web servers. WASI 0.2 (also known as Preview 2) was\n\n### [WIKIPEDIA] New York (2009 film)\nhttps://en.wikipedia.org/wiki/New_York_(2009_film)\nwas guest-composed and sung by Pankaj Awasthi and guest-written by Junaid Wasi. Released theatrically on 26 June 2009, New York received largely positive\n\n### [WIKIPEDIA] Chatur Singh Two S"
+    },
+    {
+      "query": "perovskite solar cell efficiency",
+      "totalMs": 239,
+      "sources": 2,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1471,
+      "truncated": false,
+      "slicedLen": 1471,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 239,
+          "bytes": 710,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 238,
+          "bytes": 767,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 232,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 232,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 231,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Solar-cell efficiency\nhttps://en.wikipedia.org/wiki/Solar-cell_efficiency\nSolar-cell efficiency is the portion of energy in sunlight that is converted into electricity by a solar cell. Efficiency, in combination with latitude\n\n### [WIKIPEDIA] Perovskite solar cell\nhttps://en.wikipedia.org/wiki/Perovskite_solar_cell\nA perovskite solar cell (PSC) is a type of solar cell that includes a perovskite-structured compound, most commonly a hybrid organic–inorganic lead or\n\n### [WIKIPEDIA]"
+    },
+    {
+      "query": "SQLite WAL mode",
+      "totalMs": 338,
+      "sources": 3,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1965,
+      "truncated": false,
+      "slicedLen": 1965,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 337,
+          "bytes": 665,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 338,
+          "bytes": 588,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 182,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 182,
+          "bytes": 724,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 37,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] SQLite\nhttps://en.wikipedia.org/wiki/SQLite\nrelaxed in version 3.7 as write-ahead logging (WAL) enables concurrent reads and writes. Since SQLite has to rely on file-system locks, it is not the\n\n### [WIKIPEDIA] Sync (Unix)\nhttps://en.wikipedia.org/wiki/Sync_(Unix)\nguarantee the integrity of the embedded SQLite database. More specifically, the user interface thread calls SQLite for every new page visited and the library\n\n### [WIKIPEDIA] PostgreSQL\nhttps://en.wikipedia.org/wiki/Pos"
+    },
+    {
+      "query": "protein folding AlphaFold 3",
+      "totalMs": 330,
+      "sources": 2,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1246,
+      "truncated": false,
+      "slicedLen": 1246,
+      "dedup": {
+        "before": 2,
+        "after": 2,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 330,
+          "bytes": 690,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 329,
+          "bytes": 562,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 176,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 176,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 31,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] AlphaFold\nhttps://en.wikipedia.org/wiki/AlphaFold\nAlphaFold is an artificial intelligence (AI) program developed by DeepMind, a subsidiary of Alphabet, which performs predictions of protein structure\n\n### [WIKIPEDIA] Protein folding\nhttps://en.wikipedia.org/wiki/Protein_folding\nProtein folding is the physical process by which a protein, after synthesis by a ribosome as a linear chain of amino acids, changes from an unstable random\n\n### [WIKIPEDIA] Protein fold class\nhttps://en.wi"
+    },
+    {
+      "query": "WebGPU compute shaders",
+      "totalMs": 320,
+      "sources": 3,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 2046,
+      "truncated": false,
+      "slicedLen": 2046,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 320,
+          "bytes": 765,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 189,
+          "bytes": 503,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 158,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 158,
+          "bytes": 788,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 16,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Shader\nhttps://en.wikipedia.org/wiki/Shader\nimage. Shaders can execute a wide variety of operations. In modern real-time computer graphics, shaders are run on graphics processing units (GPUs) - dedicated\n\n### [WIKIPEDIA] WebGPU Shading Language\nhttps://en.wikipedia.org/wiki/WebGPU_Shading_Language\nand finer control over compute and graphics pipelines, the W3C&#039;s GPU for the Web Community Group and Working Group created WebGPU and its companion shading\n\n### [WIKIPEDIA] List of"
+    },
+    {
+      "query": "dark matter direct detection",
+      "totalMs": 346,
+      "sources": 3,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1707,
+      "truncated": false,
+      "slicedLen": 1707,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 346,
+          "bytes": 769,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 339,
+          "bytes": 721,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 187,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 186,
+          "bytes": 224,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 42,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] Direct detection of dark matter\nhttps://en.wikipedia.org/wiki/Direct_detection_of_dark_matter\nDirect detection of dark matter is the science of attempting to directly measure dark matter collisions in Earth-based experiments. Modern astrophysical\n\n### [WIKIPEDIA] Weakly interacting massive particle\nhttps://en.wikipedia.org/wiki/Weakly_interacting_massive_particle\ndirect detection dark matter experiments&quot;. Physics of the Dark Universe. 4: 92–97. arXiv:1410.4960. Bibcode:2014P"
+    },
+    {
+      "query": "Bun runtime vs Node",
+      "totalMs": 279,
+      "sources": 3,
+      "failures": [
+        "github"
+      ],
+      "totalBeforeSlice": 1507,
+      "truncated": false,
+      "slicedLen": 1507,
+      "dedup": {
+        "before": 3,
+        "after": 3,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": true,
+          "ms": 278,
+          "bytes": 730,
+          "error": null,
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 278,
+          "bytes": 564,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 168,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 168,
+          "bytes": 220,
+          "error": null,
+          "skipped": false
+        },
+        "github": {
+          "ok": false,
+          "ms": 25,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [WIKIPEDIA] V8 (JavaScript engine)\nhttps://en.wikipedia.org/wiki/V8_(JavaScript_engine)\ncontexts, notably including the Node.js runtime system. Other server-side JavaScript runtimes use alternative engines, such as Bun (which uses JavaScriptCore)\n\n### [WIKIPEDIA] JavaScript\nhttps://en.wikipedia.org/wiki/JavaScript\ndatabase query to return information. The notable standalone runtimes are Node.js, Deno, and Bun. The following features are common to all conforming ECMAScript\n\n### [WIKIPEDIA] Ya"
+    },
+    {
+      "query": "fusion tokamak ITER",
+      "totalMs": 202,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 603,
+      "truncated": false,
+      "slicedLen": 603,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 21,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 201,
+          "bytes": 607,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 67,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 98,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 17,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Radical hydrogen-boron reactor leapfrogs current nuclear fusion tech?\nhttps://news.ycombinator.com/item?id=22384870\n0 points · 0 comments\n\n### [HACKER NEWS] Chinese Tokamak reaches over 100M degrees\nhttps://news.ycombinator.com/item?id=18447835\n0 points · 0 comments\n\n### [HACKER NEWS] Dry-run experiments verify key aspect of Sandia nuclear fusion concept\nhttps://news.ycombinator.com/item?id=4541834\n0 points · 0 comments\n\n### [HACKER NEWS] ITER Tokamak: First Plasma Through High"
+    },
+    {
+      "query": "prompt caching anthropic",
+      "totalMs": 204,
+      "sources": 1,
+      "failures": [
+        "wikipedia",
+        "github"
+      ],
+      "totalBeforeSlice": 613,
+      "truncated": false,
+      "slicedLen": 613,
+      "dedup": {
+        "before": 1,
+        "after": 1,
+        "hits": 0
+      },
+      "perSource": {
+        "tavily": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "brave": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "jina": {
+          "skipped": true,
+          "reason": "no key"
+        },
+        "wikipedia": {
+          "ok": false,
+          "ms": 33,
+          "bytes": 0,
+          "error": "429",
+          "skipped": false
+        },
+        "hn": {
+          "ok": true,
+          "ms": 203,
+          "bytes": 625,
+          "error": null,
+          "skipped": false
+        },
+        "ddg": {
+          "ok": true,
+          "ms": 80,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "stackexchange": {
+          "ok": true,
+          "ms": 104,
+          "bytes": 0,
+          "error": null,
+          "skipped": false,
+          "empty": true
+        },
+        "github": {
+          "ok": false,
+          "ms": 29,
+          "bytes": 0,
+          "error": "403",
+          "skipped": false
+        }
+      },
+      "markdownSample": "### [HACKER NEWS] Prompt Caching (Beta) – Anthropic\nhttps://docs.anthropic.com/en/docs/build-with-claude/prompt-caching?s=09\n3 points · 0 comments\n\n### [HACKER NEWS] Show HN: Magenta.nvim – AI coding plugin for Neovim focused on tool use\nhttps://github.com/dlants/magenta.nvim\n64 points · 8 comments\n\n### [HACKER NEWS] Show HN: Flemma – a Neovim plugin where the .chat buffer is the conversation\nhttps://news.ycombinator.com/item?id=47004647\n2 points · 0 comments\n\n### [HACKER NEWS] Prompt-caching – "
+    }
+  ]
+}
