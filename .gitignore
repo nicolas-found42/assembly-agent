@@ -1,3 +1,5 @@
 dist/
 .env
 .DS_Store
+.scratch/
+.wrangler/
