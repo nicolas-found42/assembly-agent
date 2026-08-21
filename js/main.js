@@ -221,11 +221,11 @@ function buildSettings() {
   el.innerHTML = `
     <div class="modal">
       <div class="model-head"><span class="modal-title">SETTINGS</span>
-        <button class="icon-btn set-close">✕</button></div>
+        <button class="icon-btn set-close" aria-label="Close Settings"><span aria-hidden="true">✕</span></button></div>
       <div class="set-field">
-        <label>OPENROUTER API KEY — Optional for Free Models</label>
+        <label for="set-api-key">OPENROUTER API KEY — Optional for Free Models</label>
         <div class="set-row">
-          <input type="password" class="set-key" placeholder="sk-or-…  (leave empty for :free via Proxy)" style="flex:1">
+          <input id="set-api-key" type="password" class="set-key" placeholder="sk-or-…  (leave empty for :free via Proxy)" style="flex:1">
           <button class="side-btn set-show">SHOW</button>
           <button class="side-btn primary set-test">TEST</button>
           <span class="test-badge"></span>

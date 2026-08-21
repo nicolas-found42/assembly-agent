@@ -87,3 +87,27 @@ _Avoid_: cors proxy, gateway
 The collapsible per-Tool-Call panel (`js/main.js:339`) that shows one `web_search` run's grouped Source blocks and its completion status (`8 SOURCES · MISSED: …` or `FAILED: …`). One Tool Round with parallel calls shows N Tool Cards stacked in round order; older rounds auto-collapse.
 _Avoid_: tool bubble, search card
 
+
+**Touch Target**:
+The interactive hit area of a HUD, drawer, or composer control at 360–375px. Must be ≥24×24px (WCAG 2.2 2.5.8) and ideally 44×44pt (Apple HIG) with 8px spacing; in ASM Agent this covers `.hud-btn`, `.pill`, `.insp-tab`, and the brand toggle.
+_Avoid_: hitbox, tap area
+
+**Focus Visible**:
+The keyboard-only focus indicator drawn via `:focus-visible` (not `:hover` or `outline:none`). In ASM Agent it must remain visible when `#sidebar`/`#inspector` overlays are open and not be obscured by fixed chrome.
+_Avoid_: focus ring, focus outline
+
+**Reduced Motion**:
+The `prefers-reduced-motion: reduce` degradation that disables ASM Agent's decorative motion — `flickerAnim` (4s), `spinframes` (0.8s), cursor blink, and boot/drawer transitions — replacing them with static glyphs or instant cuts.
+_Avoid_: reduced animation, motion safe
+
+**Live Region**:
+The decoupled announcement surface for streaming turns: a hidden `role="status" aria-live="polite"` for turn-state transitions and a `role="log"` on `#messages` for navigable history without per-token thrashing (WCAG 4.1.3).
+_Avoid_: aria-live container, announcement div
+
+**Safe Area**:
+The `env(safe-area-inset-*)` + `viewport-fit=cover` + `100dvh`/`visualViewport` handling that keeps the HUD and composer clear of the iPhone notch/Dynamic Island, home indicator, and virtual keyboard without `100vh` clipping.
+_Avoid_: notch padding, viewport inset
+
+**Reflow**:
+The 320px / 200% zoom layout guarantee (WCAG 1.4.10) that HUD buttons wrap or scroll, drawers become `100vw` overlays, and `body {overflow:hidden}` does not permanently hide content.
+_Avoid_: responsive wrap, mobile reflow

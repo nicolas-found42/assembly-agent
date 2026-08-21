@@ -44,6 +44,7 @@
         <button id="btn-sysprompt" class="side-btn">SYSTEM PROMPT ▸</button>
         <div id="sysprompt-panel" hidden>
           <div id="preset-btns"></div>
+          <label for="sysprompt-text" class="sr-only">System prompt</label>
           <textarea id="sysprompt-text" rows="6" spellcheck="false"></textarea>
           <button id="btn-sysprompt-save" class="side-btn primary">APPLY</button>
         </div>
@@ -53,6 +54,7 @@
     <main id="chat">
       <div id="messages"></div>
       <div id="composer">
+        <label for="input" class="sr-only">User query input</label>
         <textarea id="input" rows="1" placeholder="TYPE YOUR QUERY — ENTER TO TRANSMIT" spellcheck="false"></textarea>
         <div class="composer-row">
           <button id="btn-model" class="side-btn" title="model catalog">MODEL: …</button>
@@ -67,7 +69,7 @@
       <div class="insp-tabs">
         <button class="insp-tab on" data-tab="source">SOURCE</button>
         <button class="insp-tab" data-tab="memory">MEMORY</button>
-        <button id="btn-insp-close" class="icon-btn">✕</button>
+        <button id="btn-insp-close" class="icon-btn" aria-label="Close Inspector"><span aria-hidden="true">✕</span></button>
       </div>
       <div id="insp-source" class="insp-body"><pre id="wat-listing"></pre></div>
       <div id="insp-memory" class="insp-body" hidden></div>

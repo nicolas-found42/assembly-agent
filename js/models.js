@@ -172,9 +172,9 @@ function buildModal() {
     <div class="modal model-modal">
       <div class="model-head">
         <span class="modal-title">MODEL CATALOG</span>
-        <button class="icon-btn model-close">ESC</button>
+        <button class="icon-btn model-close" aria-label="Close Model Catalog">ESC</button>
       </div>
-      <div class="model-search"><input placeholder="SEARCH MODEL…" spellcheck="false"></div>
+      <div class="model-search"><input id="model-search-input" placeholder="SEARCH MODEL…" spellcheck="false" aria-label="Search models"></div>
       <div class="model-pills"></div>
       <div class="model-sorts"></div>
       <div class="model-count"></div>
