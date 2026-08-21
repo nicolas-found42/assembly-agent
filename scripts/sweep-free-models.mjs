@@ -1,9 +1,11 @@
 // sweep-free-models.mjs — live Capability Tier Sweep over every Free Model.
 //
 // Drives the REAL dist/agent.wasm + js/bridge.js over the Proxy, so the Scanner
-// under test is the one we ship. Search is canned (fixed markdown per task) so
-// the model is the only variable; every raw SSE stream is saved, because a live
-// failure only becomes an offline regression if you kept the bytes.
+// under test is the one we ship. Search is canned at the fan-out's transport
+// seam: a corpus shaped like the upstream APIs feeds js/search.js's real
+// parsing, fmt() and dedup (ADR-0002 amendment), so the model is the only
+// variable; every raw SSE stream is saved, because a live failure only becomes
+// an offline regression if you kept the bytes.
 //
 // Usage:  node scripts/sweep-free-models.mjs [--only substr] [--limit N]
 //                                            [--run .scratch/sweep/<dir>] [--rpm 20]
@@ -44,26 +46,53 @@ const CORPUS = {
   zig: {
     wikipedia: { query: { search: [{ title: 'Zig (programming language)', snippet: 'Zig is a general-purpose <b>programming language</b>. Version 0.15.2 is the current stable release.' }] } },
     hn: { hits: [{ title: 'Zig 0.15.2 released', url: 'https://ziglang.org/download/0.15.2/release-notes.html', points: 412, num_comments: 190 }] },
-    ddg: { Heading: 'Zig', AbstractText: 'Zig 0.15.2 is the current stable release of the Zig programming language.', AbstractURL: 'https://ziglang.org/', RelatedTopics: [] },
-    se: { items: [{ title: 'How do I check my Zig version?', link: 'https://stackoverflow.com/q/70000001', score: 24, is_answered: true }] },
-    gh: { items: [{ full_name: 'ziglang/zig', html_url: 'https://github.com/ziglang/zig', stargazers_count: 38000, description: 'General-purpose programming language and toolchain' }] },
+    stackexchange: { items: [{ title: 'How do I check my Zig version?', link: 'https://stackoverflow.com/q/70000001', score: 24, is_answered: true }] },
+    github: { items: [{ full_name: 'ziglang/zig', html_url: 'https://github.com/ziglang/zig', stargazers_count: 38000, description: 'General-purpose programming language and toolchain' }] },
   },
   rust: {
     wikipedia: { query: { search: [{ title: 'Rust (programming language)', snippet: 'Rust first appeared in 2010 and reached 1.0 in May 2015.' }] } },
     hn: { hits: [{ title: 'Announcing Rust 1.0', url: 'https://blog.rust-lang.org/2015/05/15/Rust-1.0.html', points: 1400, num_comments: 500 }] },
-    ddg: { Heading: 'Rust', AbstractText: 'Rust 1.0 was released on 15 May 2015. Zig first appeared in 2016.', AbstractURL: 'https://www.rust-lang.org/', RelatedTopics: [] },
-    se: { items: [{ title: 'When was Rust 1.0 released?', link: 'https://stackoverflow.com/q/70000002', score: 31, is_answered: true }] },
-    gh: { items: [{ full_name: 'rust-lang/rust', html_url: 'https://github.com/rust-lang/rust', stargazers_count: 98000, description: 'Empowering everyone to build reliable software' }] },
+    stackexchange: { items: [{ title: 'When was Rust 1.0 released?', link: 'https://stackoverflow.com/q/70000002', score: 31, is_answered: true }] },
+    github: { items: [{ full_name: 'rust-lang/rust', html_url: 'https://github.com/rust-lang/rust', stargazers_count: 98000, description: 'Empowering everyone to build reliable software' }] },
   },
   // Well-formed, plausible, and about something else entirely.
   irrelevant: {
     wikipedia: { query: { search: [{ title: 'Sourdough', snippet: 'Sourdough bread is made by the fermentation of dough using wild <b>lactobacillaceae</b> and yeast.' }] } },
     hn: { hits: [{ title: 'My sourdough starter is three years old', url: 'https://example.com/sourdough-starter', points: 88, num_comments: 41 }] },
-    ddg: { Heading: 'Sourdough', AbstractText: 'Sourdough is a bread made by fermenting dough with naturally occurring lactobacilli.', AbstractURL: 'https://en.wikipedia.org/wiki/Sourdough', RelatedTopics: [] },
-    se: { items: [{ title: 'Why is my dough not rising?', link: 'https://cooking.stackexchange.com/q/12345', score: 9, is_answered: true }] },
-    gh: { items: [{ full_name: 'hendricius/the-bread-code', html_url: 'https://github.com/hendricius/the-bread-code', stargazers_count: 3000, description: 'Learn how to master the art of baking' }] },
+    stackexchange: { items: [{ title: 'Why is my dough not rising?', link: 'https://cooking.stackexchange.com/q/12345', score: 9, is_answered: true }] },
+    github: { items: [{ full_name: 'hendricius/the-bread-code', html_url: 'https://github.com/hendricius/the-bread-code', stargazers_count: 3000, description: 'Learn how to master the art of baking' }] },
   },
 };
+
+// ── canned search transport (fan-out seam, ADR-0002 amendment) ──────────
+// Corpus entries are keyed by Source NAME, matched against SOURCE_NAMES at
+// startup: an unknown key is a hard failure, so a dropped or renamed Source
+// is loud instead of silently stale. One-directional by design — a shipping
+// Source with no corpus entry is legal: it fails offline and drops out of
+// the Fan-out, like most do today.
+// Dynamic import: search.js touches `window` at module scope, so it must load
+// after the browser shims above (same reason bridge.js loads dynamically).
+const { webSearch, SOURCE_NAMES } = await import(join(ROOT, 'js/search.js'));
+
+for (const [fixture, entries] of Object.entries(CORPUS)) {
+  for (const name of Object.keys(entries)) {
+    if (!SOURCE_NAMES.includes(name)) {
+      throw new Error(`corpus "${fixture}": key "${name}" does not name a shipping Source (${SOURCE_NAMES.join(', ')})`);
+    }
+  }
+}
+
+// Host each canned Source answers on, keyed by Source name; any other URL
+// fails offline.
+const SOURCE_HOST = {
+  wikipedia: 'wikipedia.org',
+  hn: 'hn.algolia.com',
+  stackexchange: 'api.stackexchange.com',
+  github: 'api.github.com',
+};
+for (const name of Object.keys(SOURCE_HOST)) {
+  if (!SOURCE_NAMES.includes(name)) throw new Error(`SOURCE_HOST key "${name}" does not name a shipping Source`);
+}
 
 // ── task battery ───────────────────────────────────────────────────────
 // fixture(round) picks the corpus entry for that Tool Round, so T3 can answer
@@ -95,11 +124,11 @@ const TASKS = [
   },
 ];
 
-// ── fetch interceptor ──────────────────────────────────────────────────
-// Chat calls go to the real Proxy. Search calls are served from the corpus.
-// Chat bodies are buffered, then re-emitted with the ORIGINAL chunk boundaries:
-// the Scanner sees byte-for-byte what the network produced, and we get the raw
-// text for finish_reason before bridge consumes the stream.
+// ── chat interceptor ───────────────────────────────────────────────────
+// Only chat rides global fetch now — search rides the fan-out transport seam
+// (below). Chat bodies are buffered, then re-emitted with the ORIGINAL chunk
+// boundaries: the Scanner sees byte-for-byte what the network produced, and we
+// get the raw text for finish_reason before bridge consumes the stream.
 let CASE = null;      // { fixture, statuses[], raws[], round }
 const realFetch = globalThis.fetch;
 const jsonRes = (o) => new Response(JSON.stringify(o), { headers: { 'content-type': 'application/json' } });
@@ -107,13 +136,6 @@ const jsonRes = (o) => new Response(JSON.stringify(o), { headers: { 'content-typ
 globalThis.fetch = async (url, opts) => {
   const u = String(url);
   if (u === 'dist/agent.wasm') return new Response(WASM);
-
-  const f = CASE?.fixture?.(CASE.round) ?? CORPUS.zig;
-  if (u.includes('wikipedia.org')) return jsonRes(f.wikipedia);
-  if (u.includes('hn.algolia.com')) return jsonRes(f.hn);
-  if (u.includes('api.duckduckgo.com')) return jsonRes(f.ddg);
-  if (u.includes('api.stackexchange.com')) return jsonRes(f.se);
-  if (u.includes('api.github.com')) return jsonRes(f.gh);
 
   const isChat = u.includes('/api/chat') || u.includes('openrouter.ai');
   if (!isChat) throw new Error(`offline: ${u}`);
@@ -137,6 +159,20 @@ globalThis.fetch = async (url, opts) => {
     start(c) { for (const ch of chunks) c.enqueue(ch); c.close(); },
   }), { status: res.status, headers: res.headers });
 };
+// ── canned search transport (the fan-out's own seam) ───────────────────
+// Answers each Source with its fixture entry keyed by Source name; any URL no
+// shipped Source route claims (or a fixture without that key) fails offline,
+// which timed() records as an ordinary Source miss.
+const corpusTransport = async (url) => {
+  const u = String(url);
+  const name = Object.keys(SOURCE_HOST).find((n) => u.includes(SOURCE_HOST[n]));
+  const f = CASE?.fixture?.(CASE.round) ?? CORPUS.zig;
+  if (!name || !f[name]) throw new Error(`offline: ${u}`);
+  return jsonRes(f[name]);
+};
+// The search handed to send(): the REAL Fan-out over a canned transport, so
+// parsing, fmt(), dedup and the grouped-Ranking slice stay under test.
+const cannedSearch = (q) => webSearch(q, { transport: corpusTransport });
 
 // ── engine ─────────────────────────────────────────────────────────────
 const bridge = await import(join(ROOT, 'js/bridge.js'));
@@ -161,7 +197,7 @@ async function runCase(model, task, rep) {
       onRoundFinal(t) { seen.finals.push(t); },
       onError(m) { seen.errors.push(String(m)); },
       onDone() {},
-    }, { key: '', model });
+    }, { key: '', model, search: cannedSearch });
   } catch (err) { crash = String(err?.stack || err); }
 
   const raw = CASE.raws.join('\n\n===== next request =====\n\n');

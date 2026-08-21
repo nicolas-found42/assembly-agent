@@ -29,3 +29,15 @@ Every existing test is offline, so nothing told us whether a real Free Model can
 - Tool support is a (model, endpoint) property; model-level `supported_parameters` is a union across endpoints, so the catalog `TOOLS` mask is trustworthy only while a Free Model has one endpoint (16 of 17 today)
 - **Amended:** the "parse faults only" boundary above was deliberately widened to
   support parallel tool calls properly — see `0003-parallel-tool-calls.md`
+- **Amended (search seam, 2026-08-21):** canned search enters the system at two
+  declared points instead of global-fetch interceptors — see
+  `.scratch/search-seam/spec.md`. The offline regression suite (`test/tool-loop.mjs`)
+  injects result records through `send()`'s `opts.search` adapter; the Sweep
+  (`scripts/sweep-free-models.mjs`) supplies a corpus-backed transport at
+  `webSearch()`'s `{ transport }` seam, keeping real parsing, fmt(), dedup and
+  the grouped-Ranking slice under test, while its fetch interceptor keeps only
+  the chat branch (chunk-boundary preservation intact). Chat-SSE stubbing in
+  tests is unchanged — driving real Scanner bytes stays deliberate. Corpus
+  keys are the Fan-out's Source names, validated against `SOURCE_NAMES` at
+  startup: an unknown key is a hard failure, a shipping Source with no corpus
+  entry is legal (it fails offline and drops out).

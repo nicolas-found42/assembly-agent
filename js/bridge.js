@@ -256,9 +256,17 @@ const lastContent = () => historyMessages().at(-1)?.content || '';
  * answer from the results already gathered. Callbacks: onDelta(str),
  * onRoundStart(), onRoundFinal(text), onToolStart(name, argsObj),
  * onToolDone(name, result), onDone(), onError(message).
+ *
+ * opts.search — optional per-turn adapter replacing the Source Fan-out:
+ *   async search(query) -> { markdown, sources, failures, perSource }, the
+ *   exact record the loop forwards to onToolDone. Adapters never reject;
+ *   failures ride the failures field, as in the Fan-out. Omitted, today's
+ *   production behavior is byte-identical: the keyless Fan-out (webSearch)
+ *   runs.
  */
 export async function send(text, cb, opts) {
-  const { key, model } = opts;
+  const { key, model, search } = opts;
+  const doSearch = search || webSearch;
   const useProxy = shouldUseProxy(key, model);
   const ropts = { key, model, useProxy };
   appendHistory(1, text);
@@ -298,7 +306,7 @@ export async function send(text, cb, opts) {
         calls.push({ id, name, query });
       }
       for (const c of calls) cb.onToolStart?.(c.name, { query: c.query });
-      const results = await Promise.all(calls.map((c) => webSearch(c.query || 'webassembly')));
+      const results = await Promise.all(calls.map((c) => doSearch(c.query || 'webassembly')));
       for (let i = 0; i < calls.length; i++) {
         const c = calls[i];
         const result = results[i];
@@ -308,7 +316,7 @@ export async function send(text, cb, opts) {
     } else {
       const { name, query } = pendingToolCall();
       cb.onToolStart?.(name, { query });
-      const result = await webSearch(query || 'webassembly');
+      const result = await doSearch(query || 'webassembly');
 
       const rb = new TextEncoder().encode(result.markdown);
       const S = E.scratch();
