@@ -3,7 +3,7 @@
 
 let prevFocus = null;
 let trapHandler = null;
-let activeDialog = null;
+let trapEl = null;
 let inertTargets = [];
 
 /** @returns {HTMLElement[]} focusables inside container */
@@ -48,17 +48,17 @@ function setInert(on) {
  */
 export function trapDialog(dialogEl, triggerEl, onClose) {
   // release previous trap if any (avoid leak)
-  if (trapHandler && activeDialog) {
-    try { activeDialog.removeEventListener('keydown', trapHandler); } catch {}
+  if (trapHandler && trapEl) {
+    try { trapEl.removeEventListener('keydown', trapHandler); } catch {}
+    try { document.removeEventListener('keydown', trapHandler); } catch {}
     trapHandler = null;
-    activeDialog = null;
+    trapEl = null;
   } else if (trapHandler) {
-    // fallback: ensure any lingering handler removed
     releaseTrap();
   }
 
   prevFocus = triggerEl && typeof triggerEl.focus === 'function' ? triggerEl : document.activeElement;
-  activeDialog = dialogEl;
+  trapEl = dialogEl;
   setInert(true);
 
   const els = focusables(dialogEl);
@@ -94,19 +94,20 @@ export function trapDialog(dialogEl, triggerEl, onClose) {
     }
   };
   dialogEl.addEventListener('keydown', trapHandler);
+  // document-level Escape fallback — ensures Escape works even if focus lands on body
+  document.addEventListener('keydown', trapHandler);
   return releaseTrap;
 }
 
 export function releaseTrap() {
-  if (trapHandler && activeDialog) {
-    try { activeDialog.removeEventListener('keydown', trapHandler); } catch {}
+  if (trapHandler && trapEl) {
+    try { trapEl.removeEventListener('keydown', trapHandler); } catch {}
+    try { document.removeEventListener('keydown', trapHandler); } catch {}
   } else if (trapHandler) {
-    document.querySelectorAll('.modal-backdrop').forEach((el) => {
-      try { el.removeEventListener('keydown', trapHandler); } catch {}
-    });
+    try { document.removeEventListener('keydown', trapHandler); } catch {}
   }
   trapHandler = null;
-  activeDialog = null;
+  trapEl = null;
   setInert(false);
   if (prevFocus && typeof prevFocus.focus === 'function') {
     try { prevFocus.focus(); } catch {}
