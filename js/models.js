@@ -278,7 +278,7 @@ function refresh() {
     row.setAttribute('role', 'button');
     row.setAttribute('tabindex', '0');
     row.setAttribute('aria-label', m.name);
-    if (m.id === activeId) row.setAttribute('aria-pressed', 'true');
+    row.setAttribute('aria-pressed', String(m.id === activeId));
     const badges = [
       m.flags & 1 ? 'FREE' : '', m.flags & 2 ? 'VISION' : '', m.flags & 4 ? 'REASON' : '', m.flags & 8 ? 'TOOLS' : '',
     ].filter(Boolean).map((b) => `<span class="badge">${b}</span>`).join(' ');

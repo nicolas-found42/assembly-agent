@@ -152,7 +152,14 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
   font-family: var(--font-display); font-size: 16px; color: var(--amber-mid);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.session-item .session-actions { display: none; gap: 6px; margin-top: 2px; }
+.session-title-btn {
+  font-family: var(--font-display); font-size: 16px; color: var(--amber-mid);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: transparent; border: none; padding: 0; margin: 0; text-align: left;
+  width: 100%; cursor: pointer; letter-spacing: 0;
+}
+.session-title-btn:hover { color: var(--amber-bright); }
+.session-title-btn:focus-visible { outline: 2px solid var(--amber-core); outline-offset: 2px; }
 .session-item:hover .session-actions, .session-item.on .session-actions { display: flex; }
 .session-actions button {
   font-family: var(--font-display); font-size: 13px; color: var(--amber-dim);

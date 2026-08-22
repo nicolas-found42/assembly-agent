@@ -590,19 +590,18 @@ function renderSidebar() {
   for (const s of list) {
     const item = document.createElement('div');
     item.className = 'session-item' + (s.id === act ? ' on' : '');
-    item.setAttribute('role', 'button');
-    item.setAttribute('tabindex', '0');
-    item.setAttribute('aria-label', s.title);
-    if (s.id === act) item.setAttribute('aria-current', 'true');
-    item.innerHTML = `<div class="session-title"></div>
-      <div class="session-actions">
-        <button data-a="rename">RENAME</button><button data-a="md">EXPORT MD</button>
-        <button data-a="json">EXPORT JSON</button><button data-a="del">DELETE</button>
-      </div>`;
-    item.querySelector('.session-title').textContent = s.title;
-    item.addEventListener('click', (ev) => {
+    const titleBtn = document.createElement('button');
+    titleBtn.className = 'session-title-btn';
+    titleBtn.textContent = s.title;
+    titleBtn.setAttribute('aria-label', s.title);
+    if (s.id === act) titleBtn.setAttribute('aria-current', 'true');
+    titleBtn.addEventListener('click', () => switchSession(s.id));
+    const actions = document.createElement('div');
+    actions.className = 'session-actions';
+    actions.innerHTML = `<button data-a="rename">RENAME</button><button data-a="md">EXPORT MD</button><button data-a="json">EXPORT JSON</button><button data-a="del">DELETE</button>`;
+    actions.addEventListener('click', (ev) => {
       const a = ev.target.dataset?.a;
-      if (!a) { switchSession(s.id); return; }
+      if (!a) return;
       if (a === 'md') S.exportMarkdown(s);
       else if (a === 'json') S.exportJSON(s);
       else if (a === 'del') {
@@ -610,11 +609,10 @@ function renderSidebar() {
         if (next) switchSession(next.id);
         else { S.newSession(); location.reload(); }
       } else if (a === 'rename') {
-        const t = item.querySelector('.session-title');
         const inp = document.createElement('input');
         inp.className = 'session-rename';
         inp.value = s.title;
-        t.replaceWith(inp);
+        titleBtn.replaceWith(inp);
         inp.focus(); inp.select();
         const commit = () => { S.renameSession(s.id, inp.value || s.title); renderSidebar(); };
         inp.addEventListener('keydown', (e) => {
@@ -624,14 +622,7 @@ function renderSidebar() {
         inp.addEventListener('blur', commit);
       }
     });
-    item.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') {
-        // if focus is on a nested button, let that button handle it
-        if (ev.target !== item) return;
-        ev.preventDefault();
-        switchSession(s.id);
-      }
-    });
+    item.append(titleBtn, actions);
     listEl.appendChild(item);
   }
 }
@@ -694,7 +685,7 @@ $('#btn-sysprompt-save')?.addEventListener('click', () => {
   $('#sysprompt-panel').hidden = true;
 });
 
-// sidebar collapse via brand button — a11y: aria-expanded + keyboard
+// sidebar collapse via brand button — a11y: aria-expanded + keyboard (native button handles Enter/Space)
 {
   const brand = document.querySelector('.brand');
   const sidebar = document.getElementById('sidebar');
@@ -709,12 +700,6 @@ $('#btn-sysprompt-save')?.addEventListener('click', () => {
     syncExpanded();
   };
   brand?.addEventListener('click', toggleSidebar);
-  brand?.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' || ev.key === ' ') {
-      ev.preventDefault();
-      toggleSidebar();
-    }
-  });
   // init aria-expanded to match initial state
   syncExpanded();
 }
