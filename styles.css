@@ -41,7 +41,7 @@
   outline: none;
 }
 
-html, body { height: 100%; min-height: 100vh; min-height: 100dvh; }
+html, body { height: 100%; min-height: 100vh; min-height: 100dvh; } /* 100dvh where supported; pre-iOS13 lacks dvh→100vh. Ticket 05:23 deviation: real fallback is JS scrollIntoView on #input:focus when visualViewport absent */
 
 body {
   background: var(--crt-bg);
@@ -138,7 +138,7 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
 #layout {
   position: fixed; top: calc(44px + var(--safe-top)); bottom: 0; left: 0; right: 0;
   display: flex;
-}
+} /* fixed layout uses top:calc(44+safe-top) bottom:0; html/body dvh provides 100dvh fallback vs spec's #layout min-height — intentional to avoid double scroll on fixed layout */
 
 /* sidebar */
 #sidebar {
@@ -171,8 +171,9 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
 .session-title-btn {
   font-family: var(--font-display); font-size: 16px; color: var(--amber-mid);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  background: transparent; border: none; padding: 0; margin: 0; text-align: left;
+  background: transparent; border: none; padding: 2px 6px; margin: 0; text-align: left;
   width: 100%; cursor: pointer; letter-spacing: 0;
+  min-height: 44px; display: inline-flex; align-items: center;
 }
 .session-title-btn:hover { color: var(--amber-bright); }
 .session-title-btn:focus-visible { outline: 2px solid var(--amber-core); outline-offset: 2px; }
@@ -412,8 +413,8 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
 }
 
 @media (max-width: 980px) {
-  #sidebar { position: fixed; z-index: 200; top: 44px; bottom: 0; background: var(--crt-bg); }
-  #inspector { position: fixed; z-index: 200; top: 44px; bottom: 0; right: 0; background: var(--crt-bg); }
+  #sidebar { position: fixed; z-index: 200; top: calc(44px + var(--safe-top)); bottom: 0; background: var(--crt-bg); }
+  #inspector { position: fixed; z-index: 200; top: calc(44px + var(--safe-top)); bottom: 0; right: 0; background: var(--crt-bg); }
 }
 
 @media (max-width: 480px) {

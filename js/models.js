@@ -2,7 +2,7 @@
 // Catalog: /api/v1/models (default) + two sorted variants for rank maps.
 
 import { eng, memBuf, u8, str } from './bridge.js';
-import { trapDialog, releaseTrap, announceStatus } from './a11y.js';
+import { trapDialog, releaseTrap } from './a11y.js';
 const API = 'https://openrouter.ai/api/v1';
 const MASKS = { ALL: 0, FREE: 1, VISION: 2, REASONING: 4, TOOLS: 8, 'CTX≥128K': 16, 'TPS TOP-20': 32 };
 const SORTS = ['PRICE', 'CONTEXT', 'LATENCY', 'THROUGHPUT', 'LATEST'];
@@ -162,7 +162,6 @@ export function openCombobox(cb) {
   modal.hidden = false;
   modalTrigger = document.getElementById('btn-model');
   try { trapDialog(modal, modalTrigger, closeCombobox); } catch {}
-  try { announceStatus('Model catalog opened'); } catch {}
   modal.querySelector('.model-search input').focus();
 }
 
@@ -171,7 +170,6 @@ export function closeCombobox() {
   modal.hidden = true;
   try { releaseTrap(); } catch {}
   try { if (modalTrigger && typeof modalTrigger.focus === 'function') modalTrigger.focus(); } catch {}
-  try { announceStatus('Model catalog closed'); } catch {}
 }
 
 function buildModal() {

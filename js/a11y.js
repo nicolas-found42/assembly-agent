@@ -115,36 +115,44 @@ export function releaseTrap() {
 // Decoupled polite announcer per awesome-a11y-resources-accessibility.md §2C.
 let announcerEl = null;
 function ensureAnnouncer() {
-  if (announcerEl && announcerEl.isConnected) return announcerEl;
-  announcerEl = document.getElementById('a11y-status');
-  if (announcerEl) return announcerEl;
-  announcerEl = document.createElement('div');
-  announcerEl.id = 'a11y-status';
-  announcerEl.className = 'sr-only';
-  announcerEl.setAttribute('role', 'status');
-  announcerEl.setAttribute('aria-live', 'polite');
-  announcerEl.setAttribute('aria-atomic', 'true');
-  document.body.appendChild(announcerEl);
-  return announcerEl;
+  try {
+    if (announcerEl && announcerEl.isConnected) return announcerEl;
+    announcerEl = document.getElementById('a11y-status');
+    if (announcerEl) return announcerEl;
+    announcerEl = document.createElement('div');
+    announcerEl.id = 'a11y-status';
+    announcerEl.className = 'sr-only';
+    announcerEl.setAttribute('role', 'status');
+    announcerEl.setAttribute('aria-live', 'polite');
+    announcerEl.setAttribute('aria-atomic', 'true');
+    document.body.appendChild(announcerEl);
+    return announcerEl;
+  } catch { return announcerEl || null; }
 }
 
 export function announceStatus(message, priority = 'polite') {
-  const el = ensureAnnouncer();
-  if (priority !== 'polite') el.setAttribute('aria-live', priority);
-  else el.setAttribute('aria-live', 'polite');
-  // clear then set to re-trigger AT (50ms delay per research)
-  el.textContent = '';
-  setTimeout(() => {
-    el.textContent = message;
-  }, 50);
+  try {
+    const el = ensureAnnouncer();
+    if (!el) return;
+    try { el.setAttribute('aria-live', priority !== 'polite' ? priority : 'polite'); } catch {}
+    el.textContent = '';
+    setTimeout(() => {
+      try { el.textContent = String(message ?? ''); } catch {}
+      if (priority !== 'polite') {
+        setTimeout(() => { try { el.setAttribute('aria-live', 'polite'); } catch {} }, 1000);
+      }
+    }, 50);
+  } catch {}
 }
 
 export function ensureMessagesLog() {
-  const m = document.getElementById('messages');
-  if (!m) return;
-  if (!m.hasAttribute('role')) m.setAttribute('role', 'log');
-  // during streaming we keep aria-live off; caller may toggle if needed
-  if (!m.hasAttribute('aria-live')) m.setAttribute('aria-live', 'off');
-  if (!m.hasAttribute('aria-atomic')) m.setAttribute('aria-atomic', 'false');
-  if (!m.hasAttribute('aria-label')) m.setAttribute('aria-label', 'Conversation history');
+  try {
+    const m = document.getElementById('messages');
+    if (!m) return;
+    if (!m.hasAttribute('role')) m.setAttribute('role', 'log');
+    // during streaming we keep aria-live off; caller may toggle if needed
+    if (!m.hasAttribute('aria-live')) m.setAttribute('aria-live', 'off');
+    if (!m.hasAttribute('aria-atomic')) m.setAttribute('aria-atomic', 'false');
+    if (!m.hasAttribute('aria-label')) m.setAttribute('aria-label', 'Conversation history');
+  } catch {}
 }

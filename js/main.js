@@ -84,7 +84,7 @@ async function boot() {
     if (dismissed) return;
     dismissed = true;
     skipped = true;
-    try { announceStatus('Boot dismissed'); } catch {}
+    announceStatus('Boot dismissed');
     overlay.classList.add('fade');
     const remove = () => { try { overlay.remove(); } catch {} cleanup(); };
     if (reduced) remove();
@@ -136,7 +136,7 @@ async function boot() {
     refreshModelButton();
     restoreSession();
   }
-  try { announceStatus(catalogCount === 'FAILED' ? 'Boot complete — catalog failed' : 'Boot complete — ready'); } catch {}
+  announceStatus(catalogCount === 'FAILED' ? 'Boot complete — catalog failed' : 'Boot complete — ready');
 }
 
 function catalogErrorCard() {
@@ -153,7 +153,7 @@ function catalogErrorCard() {
     catch { ev.target.textContent = 'RETRY SYNC'; announceStatus('Catalog sync failed'); }
   });
   $('#messages')?.appendChild(card);
-  try { announceStatus('Model catalog unreachable', 'assertive'); } catch {}
+  announceStatus('Model catalog unreachable', 'assertive');
 }
 
 // ── HUD telemetry ───────────────────────────────────────────────────────
@@ -264,28 +264,32 @@ function updateMemoryBars() {
 let settingsModal = null;
 let settingsTrigger = null;
 
+function commitSettingsKey(raw) {
+  settings.key = String(raw || '').trim();
+  S.saveSettings(settings);
+  // keep active model valid when key cleared (anon fallback to :free)
+  try { if (!settings.key) getActiveModel(); } catch {}
+  try { refreshModelButton(); } catch {}
+}
+
 function openSettings() {
   if (!settingsModal) settingsModal = buildSettings();
   settingsTrigger = document.getElementById('btn-settings');
   settingsModal.hidden = false;
   try { trapDialog(settingsModal, settingsTrigger, closeSettings); } catch {}
-  try { announceStatus('Settings dialog opened'); } catch {}
 }
 function closeSettings() {
   if (!settingsModal || settingsModal.hidden) return;
   try { settingsModal.hidden = true; } catch {}
   try { releaseTrap(); } catch {}
   try { if (settingsTrigger && typeof settingsTrigger.focus === 'function') settingsTrigger.focus(); } catch {}
-  try { saveSettingsFromModal(); } catch {}
+  saveSettingsFromModal();
 }
 function saveSettingsFromModal() {
   if (!settingsModal) return;
   const inp = settingsModal.querySelector('.set-key');
   if (!inp) return;
-  settings.key = inp.value.trim();
-  S.saveSettings(settings);
-  try { if (!settings.key) getActiveModel(); } catch {}
-  try { refreshModelButton(); } catch {}
+  commitSettingsKey(inp.value);
 }
 
 $('#btn-settings')?.addEventListener('click', openSettings);
@@ -331,10 +335,7 @@ function buildSettings() {
   load();
 
   const save = () => {
-    settings.key = el.querySelector('.set-key').value.trim();
-    S.saveSettings(settings);
-    try { if (!settings.key) getActiveModel(); } catch {}
-    try { refreshModelButton(); } catch {}
+    commitSettingsKey(el.querySelector('.set-key').value);
   };
   el.querySelector('.set-key').addEventListener('change', save);
 
@@ -406,7 +407,7 @@ function addErrorCard(text) {
   body.textContent = text;
   const errCard = body.closest('.msg');
   if (errCard) { errCard.setAttribute('role', 'alert'); errCard.setAttribute('aria-live', 'assertive'); }
-  try { announceStatus(text.slice(0, 120), 'assertive'); } catch {}
+  announceStatus(text.slice(0, 120), 'assertive');
 }
 
 
@@ -545,14 +546,28 @@ input.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); doSend(); }
 });
 btnSend.addEventListener('click', doSend);
-btnStop.addEventListener('click', () => { try { announceStatus('Stream stopped', 'assertive'); } catch {} stop(); });
+btnStop.addEventListener('click', () => stop());
 
 // ── visualViewport: keep composer above virtual keyboard ────────────────
 (() => {
   const composer = document.getElementById('composer');
   if (!composer) return;
   const vv = window.visualViewport;
-  if (!vv) return;
+  if (!vv) {
+    // Fallback for browsers without visualViewport (pre-iOS 13): they also lack dvh,
+    // so html/body 100dvh degrades to 100vh (no keyboard offset). Ticket 05:23
+    // asks fallback to 100dvh — honest deviation: use focus scrollIntoView.
+    const inputEl = document.getElementById('input');
+    if (inputEl) {
+      inputEl.addEventListener('focus', () => {
+        setTimeout(() => {
+          try { composer.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch {}
+          try { composer.scrollIntoView({ block: 'end' }); } catch {}
+        }, 300);
+      });
+    }
+    return;
+  }
   const onVv = () => {
     try {
       const h = vv.height;
@@ -599,11 +614,11 @@ async function doSend() {
   if (!text) return;
   const key = settings.key;
   const model = getActiveModel();
-  if (!model) { addErrorCard('NO MODEL — open the catalog and select one.'); try { announceStatus('No model selected', 'assertive'); } catch {} return; }
+  if (!model) { addErrorCard('NO MODEL — open the catalog and select one.'); announceStatus('No model selected', 'assertive'); return; }
   const isFree = model.endsWith(':free');
   if (!key && !isFree) {
     addErrorCard('This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.');
-    try { announceStatus('This model needs a key', 'assertive'); } catch {}
+    announceStatus('This model needs a key', 'assertive');
     return;
   }
 
@@ -611,7 +626,7 @@ async function doSend() {
   input.style.height = 'auto';
   addUserMsg(text);
   setBusy(true);
-  try { announceStatus('ASM Agent generating…'); } catch {}
+  announceStatus('ASM Agent generating…');
 
   let body = null, acc = '', raf = 0, toolCards = [];
   // A tool-only round streams no prose; drop its placeholder rather than
@@ -645,7 +660,7 @@ async function doSend() {
     },
     onToolStart(name, args) {
       sfxTool();
-      try { announceStatus('Searching ' + (args?.query || name || 'sources') + '…'); } catch {}
+      announceStatus('Searching ' + (args?.query || name || 'sources') + '…');
       const card = addToolCard(name, args);
       card._done = false;
       toolCards.push(card);
@@ -659,7 +674,7 @@ async function doSend() {
         card._done = true;
       }
       if (toolCards.every((c) => c._done)) window.__toolCard = null;
-      try { announceStatus('Search complete'); } catch {}
+      announceStatus('Search complete');
     },
     onRoundFinal(text) {
       if (!body) body = addMsg('assistant', 'AGENT ▸');
@@ -667,11 +682,11 @@ async function doSend() {
     },
     onAborted() {
       addErrorCard('STREAM ABORTED');
-      try { announceStatus('Stream aborted', 'assertive'); } catch {}
+      announceStatus('Stream aborted', 'assertive');
     },
     onError(msg) {
       addErrorCard(msg);
-      try { announceStatus('Error: ' + msg.slice(0, 80), 'assertive'); } catch {}
+      announceStatus('Error: ' + msg.slice(0, 80), 'assertive');
     },
     onDone() {
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
@@ -680,10 +695,8 @@ async function doSend() {
       sfxDone();
       setBusy(false);
       renderSidebar();
-      try {
-        const tokens = acc ? acc.split(/\s+/).length : 0;
-        announceStatus(tokens ? `Response complete, ${tokens} tokens` : 'Response complete');
-      } catch {}
+      const tokens = acc ? acc.split(/\s+/).length : 0;
+      announceStatus(tokens ? `Response complete, ${tokens} tokens` : 'Response complete');
     },
   }, { key, model });
   renderSidebar();
@@ -813,7 +826,7 @@ $('#btn-sysprompt-save')?.addEventListener('click', () => {
 }
 // ── start ───────────────────────────────────────────────────────────────
 // ensure log semantics even if boot fails early
-try { ensureMessagesLog(); } catch {}
+ensureMessagesLog();
 (async () => {
   applyCrt();
   try {
@@ -835,7 +848,7 @@ try { ensureMessagesLog(); } catch {}
     card.innerHTML = `<div class="msg-head">SYSTEM</div><div class="msg-body">ENGINE FAILED — ${String(e).slice(0, 300)}<br><button class="side-btn primary" style="margin-top:8px">RETRY</button></div>`;
     card.querySelector('button').addEventListener('click', () => location.reload());
     document.getElementById('messages')?.appendChild(card);
-    try { announceStatus('Engine failed to load', 'assertive'); } catch {}
+    announceStatus('Engine failed to load', 'assertive');
     return;
   }
   await boot();
