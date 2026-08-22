@@ -6,6 +6,7 @@ import { loadCatalog, openCombobox, getActiveModel, visibleModel } from './model
 import { renderMarkdown, highlightCode, addCopyButtons, renderFinal } from './markdown.js';
 import { webSearch } from './search.js';
 import * as S from './sessions.js';
+import { trapDialog, releaseTrap, announceStatus, ensureMessagesLog } from './a11y.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -65,46 +66,94 @@ const BOOT = [
   'BOOT COMPLETE — TYPE YOUR QUERY',
 ];
 
+function isReducedMotion() {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+}
+
 async function boot() {
   const pre = $('#boot-lines');
   const overlay = $('#boot-overlay');
+  if (!pre || !overlay) { refreshModelButton(); restoreSession(); return; }
+  const announcer = document.getElementById('a11y-status');
+  const skipBtn = document.getElementById('boot-skip');
+  const reduced = isReducedMotion();
+  let skipped = false;
+  let dismissed = false;
+  const delay = (ms) => reduced ? Promise.resolve() : new Promise((r) => setTimeout(r, ms));
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    skipped = true;
+    try { announceStatus('Boot dismissed'); } catch {}
+    overlay.classList.add('fade');
+    const remove = () => { try { overlay.remove(); } catch {} cleanup(); };
+    if (reduced) remove();
+    else setTimeout(remove, 700);
+  };
+  const cleanup = () => {
+    document.removeEventListener('keydown', onKey);
+    skipBtn?.removeEventListener('click', dismiss);
+    overlay.removeEventListener('click', onOverlayClick);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape' && overlay.isConnected) { e.preventDefault(); dismiss(); }
+  };
+  const onOverlayClick = (e) => {
+    if (e.target === overlay) dismiss();
+  };
+  document.addEventListener('keydown', onKey);
+  skipBtn?.addEventListener('click', dismiss);
+  overlay.addEventListener('click', onOverlayClick);
+  try { skipBtn?.focus(); } catch {}
+
   let catalogCount = '…';
   const catalogPromise = loadCatalog()
     .then((n) => { catalogCount = n; return n; })
     .catch((e) => { catalogCount = 'FAILED'; throw e; });
 
   for (let i = 0; i < BOOT.length; i++) {
+    if (skipped) break;
     let line = BOOT[i];
     if (line.includes('{n}')) {
       try { await catalogPromise; } catch {}
       line = line.replace('{n}', catalogCount === 'FAILED' ? 'FAILED — SEE RETRY CARD' : String(catalogCount));
     }
     pre.textContent += line + '\n';
-    await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
+    if (announcer && !reduced) { try { announcer.textContent = line; } catch {} }
+    if (!reduced) await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
   }
-  await new Promise((r) => setTimeout(r, 350));
-  overlay.classList.add('fade');
-  setTimeout(() => overlay.remove(), 700);
+  if (!skipped) {
+    if (!reduced) await delay(350);
+    if (!dismissed) {
+      overlay.classList.add('fade');
+      if (reduced) { try { overlay.remove(); } catch {} cleanup(); }
+      else setTimeout(() => { try { overlay.remove(); } catch {} cleanup(); }, 700);
+    } else cleanup();
+  }
 
   if (catalogCount === 'FAILED') catalogErrorCard();
   else {
     refreshModelButton();
     restoreSession();
   }
+  try { announceStatus(catalogCount === 'FAILED' ? 'Boot complete — catalog failed' : 'Boot complete — ready'); } catch {}
 }
 
 function catalogErrorCard() {
   const card = document.createElement('div');
   card.className = 'msg error';
+  card.setAttribute('role', 'alert');
+  card.setAttribute('aria-live', 'assertive');
   card.innerHTML = `<div class="msg-head">SYSTEM</div>
     <div class="msg-body">MODEL CATALOG UNREACHABLE — the engine is running but the OpenRouter catalog could not be loaded.
     <button class="side-btn primary" style="margin-top:8px">RETRY SYNC</button></div>`;
   card.querySelector('button').addEventListener('click', async (ev) => {
     ev.target.textContent = 'SYNCING…';
-    try { await loadCatalog(); card.remove(); refreshModelButton(); restoreSession(); }
-    catch { ev.target.textContent = 'RETRY SYNC'; }
+    try { await loadCatalog(); card.remove(); refreshModelButton(); restoreSession(); announceStatus('Catalog synced'); }
+    catch { ev.target.textContent = 'RETRY SYNC'; announceStatus('Catalog sync failed'); }
   });
-  $('#messages').appendChild(card);
+  $('#messages')?.appendChild(card);
+  try { announceStatus('Model catalog unreachable', 'assertive'); } catch {}
 }
 
 // ── HUD telemetry ───────────────────────────────────────────────────────
@@ -213,18 +262,44 @@ function updateMemoryBars() {
 
 // ── settings modal ──────────────────────────────────────────────────────
 let settingsModal = null;
+let settingsTrigger = null;
 
-$('#btn-settings')?.addEventListener('click', () => {
+function openSettings() {
   if (!settingsModal) settingsModal = buildSettings();
+  settingsTrigger = document.getElementById('btn-settings');
   settingsModal.hidden = false;
-});
+  try { trapDialog(settingsModal, settingsTrigger, closeSettings); } catch {}
+  try { announceStatus('Settings dialog opened'); } catch {}
+}
+function closeSettings() {
+  if (!settingsModal || settingsModal.hidden) return;
+  try { settingsModal.hidden = true; } catch {}
+  try { releaseTrap(); } catch {}
+  try { if (settingsTrigger && typeof settingsTrigger.focus === 'function') settingsTrigger.focus(); } catch {}
+  try { saveSettingsFromModal(); } catch {}
+}
+function saveSettingsFromModal() {
+  if (!settingsModal) return;
+  const inp = settingsModal.querySelector('.set-key');
+  if (!inp) return;
+  settings.key = inp.value.trim();
+  S.saveSettings(settings);
+  try { if (!settings.key) getActiveModel(); } catch {}
+  try { refreshModelButton(); } catch {}
+}
+
+$('#btn-settings')?.addEventListener('click', openSettings);
 
 function buildSettings() {
   const el = document.createElement('div');
   el.className = 'modal-backdrop';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'settings-title');
+  el.hidden = true;
   el.innerHTML = `
-    <div class="modal">
-      <div class="model-head"><span class="modal-title">SETTINGS</span>
+    <div class="modal" role="document">
+      <div class="model-head"><span class="modal-title" id="settings-title">SETTINGS</span>
         <button class="icon-btn set-close" aria-label="Close Settings"><span aria-hidden="true">✕</span></button></div>
       <div class="set-field">
         <label for="set-api-key">OPENROUTER API KEY — Optional for Free Models</label>
@@ -258,7 +333,6 @@ function buildSettings() {
   const save = () => {
     settings.key = el.querySelector('.set-key').value.trim();
     S.saveSettings(settings);
-    // Q12 B: if Anonymous, ensure active model is Free and button reflects it
     try { if (!settings.key) getActiveModel(); } catch {}
     try { refreshModelButton(); } catch {}
   };
@@ -297,8 +371,11 @@ function buildSettings() {
     location.reload();
   });
 
-  el.querySelector('.set-close').addEventListener('click', () => { save(); el.hidden = true; });
-  el.addEventListener('mousedown', (ev) => { if (ev.target === el) { save(); el.hidden = true; } });
+  el.querySelector('.set-close').addEventListener('click', closeSettings);
+  el.addEventListener('mousedown', (ev) => { if (ev.target === el) closeSettings(); });
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.preventDefault(); closeSettings(); }
+  });
   return el;
 }
 
@@ -327,6 +404,9 @@ function addUserMsg(text) {
 function addErrorCard(text) {
   const body = addMsg('error', 'ERROR');
   body.textContent = text;
+  const errCard = body.closest('.msg');
+  if (errCard) { errCard.setAttribute('role', 'alert'); errCard.setAttribute('aria-live', 'assertive'); }
+  try { announceStatus(text.slice(0, 120), 'assertive'); } catch {}
 }
 
 
@@ -465,12 +545,30 @@ input.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); doSend(); }
 });
 btnSend.addEventListener('click', doSend);
-btnStop.addEventListener('click', () => stop());
+btnStop.addEventListener('click', () => { try { announceStatus('Stream stopped', 'assertive'); } catch {} stop(); });
+
+// ── visualViewport: keep composer above virtual keyboard ────────────────
+(() => {
+  const composer = document.getElementById('composer');
+  if (!composer) return;
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const onVv = () => {
+    try {
+      const h = vv.height;
+      const offTop = vv.offsetTop || 0;
+      const kb = Math.max(0, window.innerHeight - h - offTop);
+      composer.style.transform = kb > 0 ? `translateY(-${kb}px)` : '';
+    } catch {}
+  };
+  vv.addEventListener('resize', onVv);
+  vv.addEventListener('scroll', onVv);
+  window.addEventListener('resize', onVv);
+})();
 
 $('#btn-model')?.addEventListener('click', () => {
   openCombobox((id) => refreshModelButton());
 });
-
 function refreshModelButton() {
   const id = getActiveModel();
   $('#btn-model').textContent = `MODEL: ${id || '—'}`;
@@ -501,10 +599,11 @@ async function doSend() {
   if (!text) return;
   const key = settings.key;
   const model = getActiveModel();
-  if (!model) { addErrorCard('NO MODEL — open the catalog and select one.'); return; }
+  if (!model) { addErrorCard('NO MODEL — open the catalog and select one.'); try { announceStatus('No model selected', 'assertive'); } catch {} return; }
   const isFree = model.endsWith(':free');
   if (!key && !isFree) {
     addErrorCard('This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.');
+    try { announceStatus('This model needs a key', 'assertive'); } catch {}
     return;
   }
 
@@ -512,6 +611,7 @@ async function doSend() {
   input.style.height = 'auto';
   addUserMsg(text);
   setBusy(true);
+  try { announceStatus('ASM Agent generating…'); } catch {}
 
   let body = null, acc = '', raf = 0, toolCards = [];
   // A tool-only round streams no prose; drop its placeholder rather than
@@ -545,6 +645,7 @@ async function doSend() {
     },
     onToolStart(name, args) {
       sfxTool();
+      try { announceStatus('Searching ' + (args?.query || name || 'sources') + '…'); } catch {}
       const card = addToolCard(name, args);
       card._done = false;
       toolCards.push(card);
@@ -558,6 +659,7 @@ async function doSend() {
         card._done = true;
       }
       if (toolCards.every((c) => c._done)) window.__toolCard = null;
+      try { announceStatus('Search complete'); } catch {}
     },
     onRoundFinal(text) {
       if (!body) body = addMsg('assistant', 'AGENT ▸');
@@ -565,9 +667,11 @@ async function doSend() {
     },
     onAborted() {
       addErrorCard('STREAM ABORTED');
+      try { announceStatus('Stream aborted', 'assertive'); } catch {}
     },
     onError(msg) {
       addErrorCard(msg);
+      try { announceStatus('Error: ' + msg.slice(0, 80), 'assertive'); } catch {}
     },
     onDone() {
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
@@ -576,6 +680,10 @@ async function doSend() {
       sfxDone();
       setBusy(false);
       renderSidebar();
+      try {
+        const tokens = acc ? acc.split(/\s+/).length : 0;
+        announceStatus(tokens ? `Response complete, ${tokens} tokens` : 'Response complete');
+      } catch {}
     },
   }, { key, model });
   renderSidebar();
@@ -704,12 +812,30 @@ $('#btn-sysprompt-save')?.addEventListener('click', () => {
   syncExpanded();
 }
 // ── start ───────────────────────────────────────────────────────────────
+// ensure log semantics even if boot fails early
+try { ensureMessagesLog(); } catch {}
 (async () => {
   applyCrt();
   try {
     await initEngine();
   } catch (e) {
-    document.getElementById('boot-lines').textContent += `\nENGINE FAIL — ${e}`;
+    const overlay = document.getElementById('boot-overlay');
+    const pre = document.getElementById('boot-lines');
+    if (pre) pre.textContent += `\nENGINE FAIL — ${e}`;
+    if (overlay) {
+      const reduced = isReducedMotion();
+      overlay.classList.add('fade');
+      const rm = () => { try { overlay.remove(); } catch {} };
+      if (reduced) rm(); else setTimeout(rm, 700);
+    }
+    const card = document.createElement('div');
+    card.className = 'msg error';
+    card.setAttribute('role', 'alert');
+    card.setAttribute('aria-live', 'assertive');
+    card.innerHTML = `<div class="msg-head">SYSTEM</div><div class="msg-body">ENGINE FAILED — ${String(e).slice(0, 300)}<br><button class="side-btn primary" style="margin-top:8px">RETRY</button></div>`;
+    card.querySelector('button').addEventListener('click', () => location.reload());
+    document.getElementById('messages')?.appendChild(card);
+    try { announceStatus('Engine failed to load', 'assertive'); } catch {}
     return;
   }
   await boot();

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ASM::AGENT</title>
   <meta name="description" content="Amber phosphor CRT chat agent — hand-written WAT engine, OpenRouter LLM, fan-out web search.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,8 +19,9 @@
     <div class="vignette"></div>
   </div>
 
-  <div id="boot-overlay">
-    <pre id="boot-lines" aria-hidden="true"></pre>
+  <div id="boot-overlay" role="status" aria-live="polite" aria-atomic="true">
+    <pre id="boot-lines" aria-hidden="false"></pre>
+    <button id="boot-skip" class="boot-skip" type="button" aria-label="Skip boot animation">SKIP BOOT — PRESS ESC</button>
   </div>
 
   <header id="hud">
@@ -52,7 +53,8 @@
     </aside>
 
     <main id="chat">
-      <div id="messages"></div>
+      <div id="a11y-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="messages" role="log" aria-live="off" aria-atomic="false" aria-label="Conversation history"></div>
       <div id="composer">
         <label for="input" class="sr-only">User query input</label>
         <textarea id="input" rows="1" placeholder="TYPE YOUR QUERY — ENTER TO TRANSMIT" spellcheck="false"></textarea>
