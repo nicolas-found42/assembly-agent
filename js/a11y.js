@@ -93,17 +93,13 @@ export function trapDialog(dialogEl, triggerEl, onClose) {
       }
     }
   };
-  dialogEl.addEventListener('keydown', trapHandler);
-  // document-level Escape fallback — ensures Escape works even if focus lands on body
+  // single document listener handles both Escape (even when focus on body) and Tab trapping via bubbling
   document.addEventListener('keydown', trapHandler);
   return releaseTrap;
 }
 
 export function releaseTrap() {
-  if (trapHandler && trapEl) {
-    try { trapEl.removeEventListener('keydown', trapHandler); } catch {}
-    try { document.removeEventListener('keydown', trapHandler); } catch {}
-  } else if (trapHandler) {
+  if (trapHandler) {
     try { document.removeEventListener('keydown', trapHandler); } catch {}
   }
   trapHandler = null;
