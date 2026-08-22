@@ -178,7 +178,7 @@ function buildModal() {
       <div class="model-pills"></div>
       <div class="model-sorts"></div>
       <div class="model-count"></div>
-      <div class="model-list" tabindex="0"></div>
+      <div class="model-list" tabindex="0" role="region" aria-label="Model list"></div>
     </div>`;
   document.body.appendChild(el);
 
@@ -275,6 +275,10 @@ function refresh() {
     const row = document.createElement('div');
     row.className = 'model-row' + (m.id === activeId ? ' selected' : '') + (i === state.active ? ' active' : '');
     row.dataset.i = i;
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-label', m.name);
+    if (m.id === activeId) row.setAttribute('aria-pressed', 'true');
     const badges = [
       m.flags & 1 ? 'FREE' : '', m.flags & 2 ? 'VISION' : '', m.flags & 4 ? 'REASON' : '', m.flags & 8 ? 'TOOLS' : '',
     ].filter(Boolean).map((b) => `<span class="badge">${b}</span>`).join(' ');
@@ -291,6 +295,9 @@ function refresh() {
       setActiveModel(m.id);
       onSelect?.(m.id, m);
       closeCombobox();
+    });
+    row.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); row.click(); }
     });
     frag.appendChild(row);
   }

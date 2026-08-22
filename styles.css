@@ -96,8 +96,14 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
   background: rgba(12, 7, 0, 0.92);
   border-bottom: 1px solid var(--border);
 }
-.brand { font-family: var(--font-display); font-size: 24px; color: var(--amber-core); letter-spacing: 1px; }
-.brand-dim { color: var(--amber-dim); }
+.brand {
+  font-family: var(--font-display); font-size: 24px; color: var(--amber-core); letter-spacing: 1px;
+  background: transparent; border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; min-width: 44px; padding: 6px 10px; margin: 0; line-height: 1;
+}
+.brand:hover { color: var(--amber-bright); border-color: var(--border); }
+.brand:focus-visible { outline: 2px solid var(--amber-core); outline-offset: 2px; }
 .telemetry {
   font-family: var(--font-display); font-size: 17px; color: var(--amber-mid);
   letter-spacing: 1px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

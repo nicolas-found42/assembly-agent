@@ -39,7 +39,11 @@ function applyCrt() {
   document.body.classList.toggle('crt-curve', !!c.curve);
   document.body.classList.toggle('crt-flicker', !!c.flicker);
   const map = [['btn-scan', 'scan'], ['btn-curve', 'curve'], ['btn-flicker', 'flicker'], ['btn-sound', 'sound']];
-  for (const [id, k] of map) $(`#${id}`)?.classList.toggle('on', !!c[k]);
+  for (const [id, k] of map) {
+    const el = document.getElementById(id);
+    el?.classList.toggle('on', !!c[k]);
+    if (el) el.setAttribute('aria-pressed', String(!!c[k]));
+  }
 }
 function toggleCrt(k) {
   settings.crt = settings.crt || {};
@@ -331,9 +335,18 @@ function addToolCard(name, args) {
   const card = document.createElement('div');
   card.className = 'tool-card';
   card.innerHTML = `
-    <div class="tool-head"><span>▶ ${name}(${JSON.stringify(args)})</span><span class="tool-status"><span class="tool-spin">▖▘▝▗</span> SEARCHING…</span></div>
+    <div class="tool-head" role="button" tabindex="0" aria-expanded="true"><span>▶ ${name}(${JSON.stringify(args)})</span><span class="tool-status"><span class="tool-spin">▖▘▝▗</span> SEARCHING…</span></div>
     <div class="tool-body"></div>`;
-  card.querySelector('.tool-head').addEventListener('click', () => card.classList.toggle('collapsed'));
+  {
+    const head = card.querySelector('.tool-head');
+    const syncHead = () => head.setAttribute('aria-expanded', String(!card.classList.contains('collapsed')));
+    const toggleHead = () => { card.classList.toggle('collapsed'); syncHead(); };
+    head.addEventListener('click', toggleHead);
+    head.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleHead(); }
+    });
+    syncHead();
+  }
   messagesEl.appendChild(card);
   scrollDown();
   return {
@@ -371,6 +384,9 @@ function addToolCard(name, args) {
             grp.className = 'src-group';
             const head = document.createElement('div');
             head.className = 'src-head' + (i > 1 ? ' collapsed' : '');
+            head.setAttribute('role', 'button');
+            head.setAttribute('tabindex', '0');
+            head.setAttribute('aria-expanded', String(!(i > 1)));
             head.innerHTML = `<span class="arrow">▼</span> ${g.tag} · ${g.hits.length} hit${g.hits.length === 1 ? '' : 's'} <span class="ms">· ${g.ms}ms</span>`;
             const body = document.createElement('div');
             body.className = 'src-body' + (i > 1 ? ' collapsed' : '');
@@ -403,7 +419,14 @@ function addToolCard(name, args) {
               div.appendChild(snippetDiv);
               body.appendChild(div);
             }
-            head.addEventListener('click', () => { head.classList.toggle('collapsed'); body.classList.toggle('collapsed'); });
+            {
+              const sync = () => head.setAttribute('aria-expanded', String(!head.classList.contains('collapsed')));
+              const toggle = () => { head.classList.toggle('collapsed'); body.classList.toggle('collapsed'); sync(); };
+              head.addEventListener('click', toggle);
+              head.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+              });
+            }
             grp.appendChild(head);
             grp.appendChild(body);
             bodyEl.appendChild(grp);
@@ -422,6 +445,8 @@ function addToolCard(name, args) {
         }
       }
       card.classList.add('collapsed');
+      const head = card.querySelector('.tool-head');
+      if (head) head.setAttribute('aria-expanded', String(!card.classList.contains('collapsed')));
     },
   };
 }
@@ -565,6 +590,10 @@ function renderSidebar() {
   for (const s of list) {
     const item = document.createElement('div');
     item.className = 'session-item' + (s.id === act ? ' on' : '');
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-label', s.title);
+    if (s.id === act) item.setAttribute('aria-current', 'true');
     item.innerHTML = `<div class="session-title"></div>
       <div class="session-actions">
         <button data-a="rename">RENAME</button><button data-a="md">EXPORT MD</button>
@@ -593,6 +622,14 @@ function renderSidebar() {
           if (e.key === 'Escape') renderSidebar();
         });
         inp.addEventListener('blur', commit);
+      }
+    });
+    item.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        // if focus is on a nested button, let that button handle it
+        if (ev.target !== item) return;
+        ev.preventDefault();
+        switchSession(s.id);
       }
     });
     listEl.appendChild(item);
@@ -657,9 +694,30 @@ $('#btn-sysprompt-save')?.addEventListener('click', () => {
   $('#sysprompt-panel').hidden = true;
 });
 
-// sidebar collapse via brand click
-$('.brand')?.addEventListener('click', () => $('#sidebar').classList.toggle('collapsed'));
-
+// sidebar collapse via brand button — a11y: aria-expanded + keyboard
+{
+  const brand = document.querySelector('.brand');
+  const sidebar = document.getElementById('sidebar');
+  const syncExpanded = () => {
+    if (!brand || !sidebar) return;
+    const expanded = !sidebar.classList.contains('collapsed');
+    brand.setAttribute('aria-expanded', String(expanded));
+  };
+  const toggleSidebar = () => {
+    if (!sidebar) return;
+    sidebar.classList.toggle('collapsed');
+    syncExpanded();
+  };
+  brand?.addEventListener('click', toggleSidebar);
+  brand?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      toggleSidebar();
+    }
+  });
+  // init aria-expanded to match initial state
+  syncExpanded();
+}
 // ── start ───────────────────────────────────────────────────────────────
 (async () => {
   applyCrt();

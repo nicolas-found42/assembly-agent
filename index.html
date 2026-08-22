@@ -24,13 +24,13 @@
   </div>
 
   <header id="hud">
-    <span class="brand">ASM<span class="brand-dim">::</span>AGENT</span>
+    <button class="brand" aria-expanded="false" aria-controls="sidebar" aria-label="Toggle session list">ASM<span class="brand-dim">::</span>AGENT</button>
     <span id="telemetry" class="telemetry">MEM 0KB · MSG 0 · TOK/S 0.0 · STATE IDLE</span>
     <span class="hud-btns">
-      <button id="btn-scan" class="hud-btn on" title="scanlines">SCAN</button>
-      <button id="btn-curve" class="hud-btn on" title="curvature">CURVE</button>
-      <button id="btn-flicker" class="hud-btn" title="flicker">FLICKER</button>
-      <button id="btn-sound" class="hud-btn" title="sound">SND</button>
+      <button id="btn-scan" class="hud-btn on" title="scanlines" aria-pressed="true">SCAN</button>
+      <button id="btn-curve" class="hud-btn on" title="curvature" aria-pressed="true">CURVE</button>
+      <button id="btn-flicker" class="hud-btn" title="flicker" aria-pressed="false">FLICKER</button>
+      <button id="btn-sound" class="hud-btn" title="sound" aria-pressed="false">SND</button>
       <button id="btn-inspector" class="hud-btn" title="inspector">ASM</button>
       <button id="btn-settings" class="hud-btn" title="settings">SET</button>
     </span>
@@ -39,7 +39,7 @@
   <div id="layout">
     <aside id="sidebar">
       <button id="btn-new-chat" class="side-btn primary">+ NEW CHAT</button>
-      <div id="session-list"></div>
+      <div id="session-list" tabindex="0" role="region" aria-label="Session list"></div>
       <div class="sysprompt-drawer">
         <button id="btn-sysprompt" class="side-btn">SYSTEM PROMPT ▸</button>
         <div id="sysprompt-panel" hidden>
@@ -71,8 +71,8 @@
         <button class="insp-tab" data-tab="memory">MEMORY</button>
         <button id="btn-insp-close" class="icon-btn" aria-label="Close Inspector"><span aria-hidden="true">✕</span></button>
       </div>
-      <div id="insp-source" class="insp-body"><pre id="wat-listing"></pre></div>
-      <div id="insp-memory" class="insp-body" hidden></div>
+      <div id="insp-source" class="insp-body" tabindex="0" role="region" aria-label="WAT disassembly"><pre id="wat-listing"></pre></div>
+      <div id="insp-memory" class="insp-body" tabindex="0" role="region" aria-label="Memory usage" hidden></div>
     </aside>
   </div>
 
