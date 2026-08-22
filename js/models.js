@@ -178,7 +178,7 @@ function buildModal() {
       <div class="model-pills"></div>
       <div class="model-sorts"></div>
       <div class="model-count"></div>
-      <div class="model-list" tabindex="0" role="region" aria-label="Model list"></div>
+      <div class="model-list" tabindex="0" role="listbox" aria-label="Model list"></div>
     </div>`;
   document.body.appendChild(el);
 
@@ -188,7 +188,24 @@ function buildModal() {
     clearTimeout(t);
     t = setTimeout(() => { state.query = input.value; state.active = 0; refresh(); }, 120);
   });
-
+  // Combobox: allow ArrowDown/Up/Enter from search input to navigate list (focus stays in input)
+  input.addEventListener('keydown', (ev) => {
+    const list = el.querySelector('.model-list');
+    const rows = list?.querySelectorAll('.model-row');
+    if (!rows || !rows.length) return;
+    if (ev.key === 'ArrowDown') {
+      state.active = Math.min(state.active + 1, rows.length - 1);
+      ev.preventDefault();
+      highlight(rows);
+    } else if (ev.key === 'ArrowUp') {
+      state.active = Math.max(state.active - 1, 0);
+      ev.preventDefault();
+      highlight(rows);
+    } else if (ev.key === 'Enter') {
+      const target = rows[state.active];
+      if (target) { ev.preventDefault(); target.click(); }
+    }
+  });
   const pills = el.querySelector('.model-pills');
   for (const [name, mask] of Object.entries(MASKS)) {
     const b = document.createElement('button');
@@ -275,10 +292,9 @@ function refresh() {
     const row = document.createElement('div');
     row.className = 'model-row' + (m.id === activeId ? ' selected' : '') + (i === state.active ? ' active' : '');
     row.dataset.i = i;
-    row.setAttribute('role', 'button');
-    row.setAttribute('tabindex', '0');
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', String(m.id === activeId));
     row.setAttribute('aria-label', m.name);
-    row.setAttribute('aria-pressed', String(m.id === activeId));
     const badges = [
       m.flags & 1 ? 'FREE' : '', m.flags & 2 ? 'VISION' : '', m.flags & 4 ? 'REASON' : '', m.flags & 8 ? 'TOOLS' : '',
     ].filter(Boolean).map((b) => `<span class="badge">${b}</span>`).join(' ');
@@ -295,9 +311,6 @@ function refresh() {
       setActiveModel(m.id);
       onSelect?.(m.id, m);
       closeCombobox();
-    });
-    row.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); row.click(); }
     });
     frag.appendChild(row);
   }
