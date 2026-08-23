@@ -416,6 +416,9 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
   #sidebar { position: fixed; z-index: 200; top: calc(44px + var(--safe-top)); bottom: 0; background: var(--crt-bg); }
   #inspector { position: fixed; z-index: 200; top: calc(44px + var(--safe-top)); bottom: 0; right: 0; background: var(--crt-bg); }
 }
+@media (max-width: 980px) {
+  #sidebar.collapsed { margin-left: -100vw !important; }
+}
 
 @media (max-width: 480px) {
   #hud { gap: 8px; padding: 0 8px; height: auto; min-height: 44px; flex-wrap: wrap; padding-top: var(--safe-top); }
@@ -428,3 +431,4 @@ body.crt-flicker { animation: flickerAnim 4s infinite; }
   #boot-lines { min-width: auto; width: 90vw; font-size: 16px; }
   #composer { padding-left: 10px; padding-right: 10px; }
 }
+[hidden] { display: none !important; }

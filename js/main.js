@@ -821,9 +821,43 @@ $('#btn-sysprompt-save')?.addEventListener('click', () => {
     syncExpanded();
   };
   brand?.addEventListener('click', toggleSidebar);
+  // mobile: drawer starts collapsed so chat is visible (≤980px overlay)
+  try { if (window.matchMedia('(max-width: 980px)').matches) sidebar?.classList.add('collapsed'); } catch {}
   // init aria-expanded to match initial state
   syncExpanded();
 }
+// ── hud/layout sync: hud wraps at ≤480 (height 44→97) so layout/sidebars must track it
+(() => {
+  const hud = document.getElementById('hud');
+  const layout = document.getElementById('layout');
+  if (!hud || !layout) return;
+  const sync = () => {
+    const h = Math.ceil(hud.getBoundingClientRect().height);
+    layout.style.top = h + 'px';
+    const isMobile = window.matchMedia('(max-width: 980px)').matches;
+    const sb = document.getElementById('sidebar');
+    const insp = document.getElementById('inspector');
+    if (isMobile) {
+      if (sb) sb.style.top = h + 'px';
+      if (insp) insp.style.top = h + 'px';
+    } else {
+      if (sb) sb.style.top = '';
+      if (insp) insp.style.top = '';
+    }
+  };
+  // run after styles applied and on resize
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync);
+  else sync();
+  window.addEventListener('resize', sync);
+  // also observe hud size changes (wrap due to font load)
+  try {
+    const ro = new ResizeObserver(sync);
+    ro.observe(hud);
+  } catch {}
+  // expose for tests
+  window.__asm = window.__asm || {};
+  window.__asm.syncHudLayout = sync;
+})();
 // ── start ───────────────────────────────────────────────────────────────
 // ensure log semantics even if boot fails early
 ensureMessagesLog();

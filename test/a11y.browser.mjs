@@ -202,10 +202,16 @@ const viewports = [
 
 const states = [
   { name: 'default', open: null },
-  { name: 'sysprompt', open: async (page) => { 
-      const b = await page.$('#btn-sysprompt'); 
-      if (b) await b.click(); 
-      await page.waitForSelector('#sysprompt-panel', { visible: true, timeout: 2000 }).catch(()=>{}); 
+  { name: 'sysprompt', open: async (page) => {
+      // sidebar is a 100vw drawer collapsed on mobile; open it first
+      await page.evaluate(()=> {
+        const s=document.getElementById('sidebar');
+        if(s && s.classList.contains('collapsed')) s.classList.remove('collapsed');
+      });
+      await new Promise(r=>setTimeout(r, 250));
+      const b = await page.$('#btn-sysprompt');
+      if (b) await b.click();
+      await page.waitForSelector('#sysprompt-panel', { visible: true, timeout: 2000 }).catch(()=>{});
       await new Promise(r=>setTimeout(r, 200));
     } },
   { name: 'inspector', open: async (page) => { 
@@ -433,13 +439,29 @@ for (const vp of [{w:320,h:568},{w:375,h:667}]) {
   ok(`reflow ${vp.w} layout not overflow`, (hudMetrics.layoutScroll||0) <= vp.w + 5, `layout scroll ${hudMetrics.layoutScroll} > ${vp.w}`);
   ok(`body overflow not hidden trap at ${vp.w}`, hudMetrics.bodyOverflow !== 'hidden', `body overflow is hidden (should be auto)`);
   // check touch targets: WCAG 2.5.8 ≥24, HIG primary ≥44
+  // ensure drawers are open for pill/insp-tab measurement (mobile collapsed hides them at 0x0)
+  await page.evaluate(()=> {
+    const s=document.getElementById('sidebar');
+    if(s && s.classList.contains('collapsed')) s.classList.remove('collapsed');
+    const panel=document.getElementById('sysprompt-panel');
+    if(panel) panel.hidden=false;
+    const insp=document.getElementById('inspector');
+    if(insp && insp.hidden) { insp.hidden=false; insp.style.display='flex'; }
+  });
+  await new Promise(r=>setTimeout(r, 250));
   const rects = await page.evaluate(()=> {
     const selectors = ['.hud-btn', '.side-btn', '.pill', '.insp-tab', '.icon-btn', '.brand', '#btn-send', '.session-actions button', '.session-title-btn'];
     const out = [];
     for (const sel of selectors) {
       const els = Array.from(document.querySelectorAll(sel));
       for (const el of els.slice(0,3)) {
+        // skip hidden/off-screen (drawer closed, panel collapsed) — 0x0 is not a target-size failure
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
         const r = el.getBoundingClientRect();
+        if (r.width < 1 && r.height < 1) continue;
+        // also skip if completely off-viewport left (collapsed drawer)
+        if (r.right < 0 || r.left > window.innerWidth) continue;
         out.push({ sel, w: r.width, h: r.height, text: el.textContent.slice(0,20) });
       }
     }
