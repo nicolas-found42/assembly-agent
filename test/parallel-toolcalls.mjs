@@ -106,6 +106,9 @@ function feed(lines) {
 const line = (calls) => `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: calls } }] })}`;
 const opener = (i, id, name) => ({ index: i, id, type: 'function', function: { name, arguments: '' } });
 const frag = (i, text) => ({ index: i, function: { arguments: text } });
+const call = (i, id, q) => ({
+  index: i, id, type: 'function', function: { name: 'web_search', arguments: `{"query": "${q}"}` },
+});
 
 // ── 3. calls packed on one line == calls streamed a fragment at a time ─
 {
@@ -192,6 +195,34 @@ const frag = (i, text) => ({ index: i, function: { arguments: text } });
   assert.equal(r.count, 0, 'finish_reason line: nothing staged');
   assert.equal(r.render, 'wrapping up', 'finish_reason line: content still renders');
   console.log('ok  : a finish_reason:"tool_calls" line ahead of the delta is safe');
+}
+
+// ── 8. end_turn writes one role-2 entry plus role-4 siblings to history ─
+// Ticket 02's contract lives at the HISTORY level: a two-call turn appends
+// exactly TWO entries — role 2 carrying call 1 (byte-identical to what a
+// single-call turn stores), role 4 carrying call 2 — which buildMessages()
+// coalesces back into one assistant message. A single-call turn appends
+// exactly one entry, unchanged.
+{
+  const base = E.history_count();
+
+  feed([line([call(0, 'a1', 'alpha'), call(1, 'b2', 'beta')])]);
+  const pair = bridge.historyMessages().slice(base);
+  assert.equal(pair.length, 2, 'history: two-call turn appends exactly two entries');
+  assert.deepEqual(pair.map((m) => m.role), [2, 4], 'history: roles are 2 then 4');
+  assert.equal(pair[0].tool_call_id, 'a1', 'history: role-2 entry carries call 1');
+  assert.deepEqual(JSON.parse(pair[0].args), { query: 'alpha' }, 'history: role-2 args are call 1');
+  assert.equal(pair[1].tool_call_id, 'b2', 'history: role-4 sibling carries call 2');
+  assert.deepEqual(JSON.parse(pair[1].args), { query: 'beta' }, 'history: role-4 args are call 2');
+
+  // the same call alone must store a byte-identical role-2 entry
+  const soloBase = E.history_count();
+  feed([line([call(0, 'a1', 'alpha')])]);
+  const solo = bridge.historyMessages().slice(soloBase);
+  assert.equal(solo.length, 1, 'history: single-call turn appends exactly one entry');
+  assert.deepEqual(solo[0], pair[0],
+    'history: role-2 entry byte-identical to a single-call turn');
+  console.log('ok  : end_turn stages role-2 + role-4 siblings, single-call unchanged');
 }
 
 console.log('ALL PARALLEL-TOOLCALL PASS');
