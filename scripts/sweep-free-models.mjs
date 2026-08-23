@@ -170,8 +170,8 @@ const corpusTransport = async (url) => {
   if (!name || !f[name]) throw new Error(`offline: ${u}`);
   return jsonRes(f[name]);
 };
-// The search handed to send(): the REAL Fan-out over a canned transport, so
-// parsing, fmt(), dedup and the grouped-Ranking slice stay under test.
+// The search handed to runTurn(): the REAL Fan-out over a canned transport,
+// so parsing, fmt(), dedup and the grouped-Ranking slice stay under test.
 const cannedSearch = (q) => webSearch(q, { transport: corpusTransport });
 
 // ── engine ─────────────────────────────────────────────────────────────
@@ -189,15 +189,19 @@ async function runCase(model, task, rep) {
   bridge.appendHistory(0, SYSTEM);
   let crash = null;
   try {
-    await bridge.send(task.prompt, {
-      onRoundStart() { seen.rounds++; },
-      onDelta(d) { seen.delta += d; },
-      onToolStart(n, a) { seen.queries.push({ name: n, query: a.query }); },
-      onToolDone() { CASE.round++; },
-      onRoundFinal(t) { seen.finals.push(t); },
-      onError(m) { seen.errors.push(String(m)); },
-      onDone() {},
-    }, { key: '', model, search: cannedSearch });
+    await bridge.runTurn(task.prompt, {
+      key: '', model, search: cannedSearch,
+      on(ev) {
+        switch (ev.type) {
+          case 'round-started': seen.rounds++; break;
+          case 'delta': seen.delta += ev.text; break;
+          case 'tool-started': seen.queries.push({ name: ev.name, query: ev.query }); break;
+          case 'tool-finished': CASE.round++; break;
+          case 'round-final': seen.finals.push(ev.text); break;
+          case 'errored': seen.errors.push(String(ev.message)); break;
+        }
+      },
+    });
   } catch (err) { crash = String(err?.stack || err); }
 
   const raw = CASE.raws.join('\n\n===== next request =====\n\n');

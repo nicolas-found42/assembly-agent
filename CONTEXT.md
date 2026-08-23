@@ -38,11 +38,15 @@ _Avoid_: function call, tool invocation
 
 **Tool Round**:
 One request to the model plus one `web_search` run whose result is fed back as a `role:"tool"` message.
-_Avoid_: iteration, turn, hop
+_Avoid_: iteration, hop, turn (ambiguous — a Turn spans N Tool Rounds)
 
 **Search Budget**:
-The largest number of Tool Rounds one turn may spend (`MAX_TOOL_ROUNDS`, currently 5). The only guaranteed stop in the tool loop: when it runs out, a final tools-removed pass nudged by `BUDGET_NUDGE` forces an answer.
+The largest number of Tool Rounds one Turn may spend (`MAX_TOOL_ROUNDS`, currently 5). The only guaranteed stop in the tool loop: when it runs out, a final tools-removed pass nudged by `BUDGET_NUDGE` forces an answer.
 _Avoid_: tool limit, max rounds, retry limit
+
+**Turn**:
+One user message processed to a final answer: N Tool Rounds bounded by the Search Budget, optionally closed by the `BUDGET_NUDGE` pass. The Turn loop lives in the Bridge; a saved session stores Turns as history entries.
+_Avoid_: request cycle, completion, exchange
 
 **Scanner**:
 The WAT code that reads the SSE stream and stages every Tool Call of the turn in the Tool Call Table. Walks each `tool_calls` line left to right: `"id":"` opens the next slot, `"name":"` and `"arguments":"` land on the slot open at that point.

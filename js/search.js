@@ -11,6 +11,16 @@ function fmt(tag, title, url, snippet) {
   return out + '\n';
 }
 
+/** Parse fmt blocks back into structured hits: [{ tag, title, url, snippet }] in dedup order. */
+export function parseBlocks(markdown) {
+  const out = [];
+  for (const block of markdown.split(/(?=### \[)/)) {
+    const m = block.match(/^### \[([^\]]+)\] (.+)\n(\S*)\n?([\s\S]*)$/);
+    if (m) out.push({ tag: m[1], title: m[2], url: m[3], snippet: m[4] });
+  }
+  return out;
+}
+
 const stripTags = (s) => String(s || '').replace(/<[^>]*>/g, '').trim();
 const norm = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
 

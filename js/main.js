@@ -1,10 +1,10 @@
 // main.js — boot, orchestration, HUD, inspector, audio, settings, sidebar.
 
-import { initEngine, eng, memBuf, send, stop, streaming, appendHistory,
-  clearHistory, historyMessages, renderDrain, resetRender } from './bridge.js';
+import { initEngine, eng, memBuf, runTurn, checkAccess, stop, streaming,
+  appendHistory, clearHistory, historyMessages, renderDrain, resetRender } from './bridge.js';
 import { loadCatalog, openCombobox, getActiveModel, visibleModel } from './models.js';
 import { renderMarkdown, highlightCode, addCopyButtons, renderFinal } from './markdown.js';
-import { webSearch } from './search.js';
+import { parseBlocks } from './search.js';
 import * as S from './sessions.js';
 import { trapDialog, releaseTrap, announceStatus, ensureMessagesLog } from './a11y.js';
 
@@ -446,15 +446,13 @@ function addToolCard(name, args) {
         const msMap = new Map(result.perSource.map((ps) => [ps.tag, ps.ms]));
         const groups = [];
         let cur = null;
-        for (const block of result.markdown.split(/(?=### \[)/)) {
-          const m = block.match(/^### \[([^\]]+)\] (.+)\n(\S*)\n?([\s\S]*)$/);
-          if (!m) continue;
-          const tag = m[1];
+        for (const b of parseBlocks(result.markdown)) {
+          const tag = b.tag;
           if (!cur || cur.tag !== tag) {
             cur = { tag, ms: msMap.get(tag) ?? 0, hits: [] };
             groups.push(cur);
           }
-          cur.hits.push({ title: m[2], url: m[3], snippet: m[4] });
+          cur.hits.push(b);
         }
         if (!groups.length && result.sources === 0) {
           bodyEl.innerHTML = `<div style="color:var(--err);padding:8px;">No sources returned. <code>failures: [${(result.failures || []).join(', ')}]</code></div>`;
@@ -514,14 +512,12 @@ function addToolCard(name, args) {
           }
         }
       } else {
-        for (const block of result.markdown.split(/(?=### \[)/)) {
-          const m = block.match(/^### \[([^\]]+)\] (.+)\n(\S*)\n?([\s\S]*)$/);
-          if (!m) continue;
+        for (const h of parseBlocks(result.markdown)) {
           const div = document.createElement('div');
           div.className = 'tool-src';
-          const a = m[3] ? `<a href="${m[3]}" target="_blank" rel="noopener">${m[3]}</a>` : '';
-          div.innerHTML = `<span class="tag">${m[1]}</span>${a}<div class="snippet"></div>`;
-          div.querySelector('.snippet').textContent = m[4].slice(0, 220);
+          const a = h.url ? `<a href="${h.url}" target="_blank" rel="noopener">${h.url}</a>` : '';
+          div.innerHTML = `<span class="tag">${h.tag}</span>${a}<div class="snippet"></div>`;
+          div.querySelector('.snippet').textContent = h.snippet.slice(0, 220);
           bodyEl.appendChild(div);
         }
       }
@@ -615,9 +611,9 @@ async function doSend() {
   const key = settings.key;
   const model = getActiveModel();
   if (!model) { addErrorCard('NO MODEL — open the catalog and select one.'); announceStatus('No model selected', 'assertive'); return; }
-  const isFree = model.endsWith(':free');
-  if (!key && !isFree) {
-    addErrorCard('This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.');
+  const gate = checkAccess(model, settings.key);
+  if (!gate.ok) {
+    addErrorCard(gate.reason);
     announceStatus('This model needs a key', 'assertive');
     return;
   }
@@ -643,62 +639,66 @@ async function doSend() {
     scrollDown();
   };
 
-  await send(text, {
-    onRoundStart() {
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      dropIfEmpty();
-      body = addMsg('assistant', 'AGENT ▸');
-      acc = '';
-      toolCards = [];
-      window.__toolCards = toolCards;
-      resetRender();
-      renderDrain();
-    },
-    onDelta(d) {
-      acc += d;
-      if (!raf) raf = requestAnimationFrame(paint);
-    },
-    onToolStart(name, args) {
-      sfxTool();
-      announceStatus('Searching ' + (args?.query || name || 'sources') + '…');
-      const card = addToolCard(name, args);
-      card._done = false;
-      toolCards.push(card);
-      window.__toolCard = card;
-      window.__toolCards = toolCards;
-    },
-    onToolDone(name, result) {
-      const card = toolCards.find((c) => !c._done) || toolCards[toolCards.length - 1];
-      if (card) {
-        card.done(result);
-        card._done = true;
+  await runTurn(text, {
+    key, model,
+    persist: () => S.saveActiveSession(historyMessages()),
+    on(ev) {
+      switch (ev.type) {
+        case 'round-started':
+          if (raf) { cancelAnimationFrame(raf); raf = 0; }
+          dropIfEmpty();
+          body = addMsg('assistant', 'AGENT ▸');
+          acc = '';
+          toolCards = [];
+          resetRender();
+          renderDrain();
+          break;
+        case 'delta':
+          acc += ev.text;
+          if (!raf) raf = requestAnimationFrame(paint);
+          break;
+        case 'tool-started': {
+          sfxTool();
+          announceStatus('Searching ' + (ev.query || ev.name || 'sources') + '…');
+          const card = addToolCard(ev.name, { query: ev.query });
+          card._done = false;
+          toolCards.push(card);
+          break;
+        }
+        case 'tool-finished': {
+          const card = toolCards.find((c) => !c._done) || toolCards[toolCards.length - 1];
+          if (card) {
+            card.done(ev.result);
+            card._done = true;
+          }
+          announceStatus('Search complete');
+          break;
+        }
+        case 'round-final':
+          if (!body) body = addMsg('assistant', 'AGENT ▸');
+          renderFinal(body, ev.text);
+          break;
+        case 'aborted':
+          addErrorCard('STREAM ABORTED');
+          announceStatus('Stream aborted', 'assertive');
+          break;
+        case 'errored':
+          addErrorCard(ev.message);
+          announceStatus('Error: ' + ev.message.slice(0, 80), 'assertive');
+          break;
+        case 'done':
+          if (raf) { cancelAnimationFrame(raf); raf = 0; }
+          dropIfEmpty();
+          body?.classList.remove('cursor-blink');
+          sfxDone();
+          setBusy(false);
+          renderSidebar();
+          const tokens = acc ? acc.split(/\s+/).length : 0;
+          announceStatus(tokens ? `Response complete, ${tokens} tokens` : 'Response complete');
+          break;
       }
-      if (toolCards.every((c) => c._done)) window.__toolCard = null;
-      announceStatus('Search complete');
     },
-    onRoundFinal(text) {
-      if (!body) body = addMsg('assistant', 'AGENT ▸');
-      renderFinal(body, text);
-    },
-    onAborted() {
-      addErrorCard('STREAM ABORTED');
-      announceStatus('Stream aborted', 'assertive');
-    },
-    onError(msg) {
-      addErrorCard(msg);
-      announceStatus('Error: ' + msg.slice(0, 80), 'assertive');
-    },
-    onDone() {
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      dropIfEmpty();
-      body?.classList.remove('cursor-blink');
-      sfxDone();
-      setBusy(false);
-      renderSidebar();
-      const tokens = acc ? acc.split(/\s+/).length : 0;
-      announceStatus(tokens ? `Response complete, ${tokens} tokens` : 'Response complete');
-    },
-  }, { key, model });
+  });
   renderSidebar();
 }
 
@@ -854,7 +854,5 @@ ensureMessagesLog();
   await boot();
 })();
 
-// debug surface
 window.__asm = window.__asm || {};
-window.__asm.search = webSearch;
 window.__asm.history = historyMessages;

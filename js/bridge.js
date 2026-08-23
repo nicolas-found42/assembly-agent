@@ -1,4 +1,4 @@
-// bridge.js — WASM instantiate + chat loop + request building.
+// bridge.js — WASM instantiate + Turn loop + request building.
 // All engine I/O flows through linear memory: SSE bytes and tool results are
 // staged into the scratch region before exports are called.
 
@@ -139,6 +139,21 @@ export const proxyUrl = () => {
 };
 export const shouldUseProxy = (key, model) => !key && isFreeModel(model);
 
+/**
+ * Single source of the paid-model gate: an Anonymous User may run Free Models
+ * through the Proxy only; anything else needs a BYO key. Shared by the UI
+ * pre-check and enforced authoritatively at the Turn boundary.
+ */
+export function checkAccess(model, key) {
+  if (!key && !isFreeModel(model)) {
+    return {
+      ok: false,
+      reason: 'This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.',
+    };
+  }
+  return { ok: true };
+}
+
 export const MAX_TOOL_ROUNDS = 5;
 
 /**
@@ -175,9 +190,9 @@ function pendingToolCall() {
  * One streamed completion into wasm history. `messages` is passed explicitly
  * so the final pass can append BUDGET_NUDGE without touching stored history.
  * Returns 'ok' | 'error' | 'abort' — the caller has already been notified via
- * cb for the two failure outcomes.
+ * emit() for the two failure outcomes.
  */
-async function runRound(messages, withTools, opts, cb) {
+async function runRound(messages, withTools, opts, emit) {
   const { key, model, useProxy } = opts;
   resetRender();
   E.begin_turn();
@@ -200,8 +215,8 @@ async function runRound(messages, withTools, opts, cb) {
     res = await fetch(url, { method: 'POST', signal: aborter.signal, headers, body });
   } catch (err) {
     aborter = null; E.end_turn();
-    if (err.name === 'AbortError') { cb.onAborted?.(); return 'abort'; }
-    cb.onError?.(String(err)); return 'error';
+    if (err.name === 'AbortError') { emit({ type: 'aborted' }); return 'abort'; }
+    emit({ type: 'errored', message: String(err) }); return 'error';
   }
 
   if (!res.ok) {
@@ -210,7 +225,7 @@ async function runRound(messages, withTools, opts, cb) {
     try { const j = await res.json(); msg = j?.error?.message || msg; } catch {}
     if (res.status === 429 && useProxy) msg += ' — Free tier busy — try again in a minute or add your own key in SET to bypass.';
     E.end_turn();
-    cb.onError?.(msg); return 'error';
+    emit({ type: 'errored', message: msg }); return 'error';
   }
 
   const reader = res.body.getReader();
@@ -226,19 +241,19 @@ async function runRound(messages, withTools, opts, cb) {
         off += piece.length;
       }
       const delta = renderDrain();
-      if (delta) cb.onDelta?.(delta);
+      if (delta) emit({ type: 'delta', text: delta });
       const state = new DataView(memBuf(), 4, 4).getInt32(0, true);
       if (state === 3) {
         const msg = str(E.err_ptr(), E.err_len()) || 'STREAM ERROR';
         aborter = null; E.end_turn();
-        cb.onError?.(msg); return 'error';
+        emit({ type: 'errored', message: msg }); return 'error';
       }
       if (state === 2) break; // [DONE]
     }
   } catch (err) {
     aborter = null; E.end_turn();
-    if (err.name === 'AbortError') { cb.onAborted?.(); return 'abort'; }
-    cb.onError?.(String(err)); return 'error';
+    if (err.name === 'AbortError') { emit({ type: 'aborted' }); return 'abort'; }
+    emit({ type: 'errored', message: String(err) }); return 'error';
   }
 
   aborter = null;
@@ -250,45 +265,72 @@ async function runRound(messages, withTools, opts, cb) {
 const lastContent = () => historyMessages().at(-1)?.content || '';
 
 /**
- * send(text) — append user msg, stream the reply, run web_search tool rounds
- * (max MAX_TOOL_ROUNDS). When the budget runs out the turn does NOT end
- * silently: a final tools-disabled pass, nudged by BUDGET_NUDGE, forces an
- * answer from the results already gathered. Callbacks: onDelta(str),
- * onRoundStart(), onRoundFinal(text), onToolStart(name, argsObj),
- * onToolDone(name, result), onDone(), onError(message).
+ * runTurn(text, opts) — one Turn: append the user message, stream the reply,
+ * run web_search Tool Rounds (max MAX_TOOL_ROUNDS). When the budget runs out
+ * the turn does NOT end silently: a final tools-disabled pass, nudged by
+ * BUDGET_NUDGE, forces an answer from the results already gathered.
  *
+ * opts.on(event) — eight tagged records, in order:
+ *   { type: 'round-started', round }
+ *   { type: 'delta', text }
+ *   { type: 'tool-started', name, query }
+ *   { type: 'tool-finished', name, query, result }
+ *   { type: 'round-final', text }
+ *   { type: 'aborted' }
+ *   { type: 'errored', message }
+ *   { type: 'done' }
+ * opts.persist() — fires at three points: after the user message lands in
+ *   history (even when access is denied below), after a natural round-final,
+ *   and after the nudged budget-exhausted pass. Never past an error/abort.
  * opts.search — optional per-turn adapter replacing the Source Fan-out:
  *   async search(query) -> { markdown, sources, failures, perSource }, the
- *   exact record the loop forwards to onToolDone. Adapters never reject;
- *   failures ride the failures field, as in the Fan-out. Omitted, today's
- *   production behavior is byte-identical: the keyless Fan-out (webSearch)
- *   runs.
+ *   exact record forwarded on tool-finished. Adapters never reject; failures
+ *   ride the failures field, as in the Fan-out. Omitted, the production
+ *   Fan-out (webSearch) runs.
+ *
+ * Resolves to a TurnSummary: { ok, rounds, text, aborted?, error? }.
  */
-export async function send(text, cb, opts) {
-  const { key, model, search } = opts;
+export async function runTurn(text, { key, model, on, persist, search } = {}) {
+  let lastError = null;
+  let aborted = false;
+  const emit = (event) => {
+    if (event.type === 'errored') lastError = event.message;
+    if (event.type === 'aborted') aborted = true;
+    on?.(event);
+  };
+
   const doSearch = search || webSearch;
   const useProxy = shouldUseProxy(key, model);
   const ropts = { key, model, useProxy };
   appendHistory(1, text);
-  saveActiveSession(historyMessages());
-  if (!key && !useProxy) {
-    // paid model without key — blocked before network (Q9 A + Q11 A helper)
-    cb.onError?.('This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.');
-    cb.onDone?.();
-    return;
+  persist?.();
+
+  const access = checkAccess(model, key);
+  if (!access.ok) {
+    emit({ type: 'errored', message: access.reason });
+    emit({ type: 'done' });
+    return { ok: false, rounds: 0, text: '', error: access.reason };
   }
 
-  let exhausted = false;
+  const failSummary = (round) => {
+    emit({ type: 'done' });
+    const summary = { ok: false, rounds: round + 1, text: '' };
+    if (aborted) summary.aborted = true;
+    else summary.error = lastError || 'error';
+    return summary;
+  };
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    cb.onRoundStart?.(round);
-    const status = await runRound(buildMessages(), true, ropts, cb);
-    if (status !== 'ok') { cb.onDone?.(); return; }
+    emit({ type: 'round-started', round });
+    const status = await runRound(buildMessages(), true, ropts, emit);
+    if (status !== 'ok') return failSummary(round);
 
     if (E.tool_pending() !== 1) {
-      cb.onRoundFinal?.(lastContent());
-      cb.onDone?.();
-      saveActiveSession(historyMessages());
-      return;
+      const finalText = lastContent();
+      emit({ type: 'round-final', text: finalText });
+      persist?.();
+      emit({ type: 'done' });
+      return { ok: true, rounds: round + 1, text: finalText };
     }
 
     const count = E.tc_count();
@@ -305,17 +347,16 @@ export async function send(text, cb, opts) {
         try { query = JSON.parse(argsText).query ?? ''; } catch {}
         calls.push({ id, name, query });
       }
-      for (const c of calls) cb.onToolStart?.(c.name, { query: c.query });
+      for (const c of calls) emit({ type: 'tool-started', name: c.name, query: c.query });
       const results = await Promise.all(calls.map((c) => doSearch(c.query || 'webassembly')));
       for (let i = 0; i < calls.length; i++) {
         const c = calls[i];
-        const result = results[i];
-        appendHistory(3, result.markdown, { tool_call_id: c.id, name: c.name });
-        cb.onToolDone?.(c.name, result);
+        appendHistory(3, results[i].markdown, { tool_call_id: c.id, name: c.name });
+        emit({ type: 'tool-finished', name: c.name, query: c.query, result: results[i] });
       }
     } else {
       const { name, query } = pendingToolCall();
-      cb.onToolStart?.(name, { query });
+      emit({ type: 'tool-started', name, query });
       const result = await doSearch(query || 'webassembly');
 
       const rb = new TextEncoder().encode(result.markdown);
@@ -324,24 +365,22 @@ export async function send(text, cb, opts) {
       E.tool_result_append(S, rb.length);
       E.tool_result_flush();
 
-      cb.onToolDone?.(name, result);
+      emit({ type: 'tool-finished', name, query, result });
     }
-    if (round === MAX_TOOL_ROUNDS - 1) exhausted = true;
   }
 
-  if (exhausted) {
-    // Budget spent on searches — force an answer instead of ending the turn
-    // empty. The nudge is ephemeral: history keeps only the reply.
-    cb.onRoundStart?.(MAX_TOOL_ROUNDS);
-    const msgs = [...buildMessages(), { role: 'user', content: BUDGET_NUDGE }];
-    const status = await runRound(msgs, false, ropts, cb);
-    if (status !== 'ok') { cb.onDone?.(); return; }
-    const final = lastContent();
-    cb.onRoundFinal?.(final.trim()
-      ? final
-      : `Search budget (${MAX_TOOL_ROUNDS} rounds) spent without a usable answer. Try a narrower question, or add a Tavily/Brave/Jina key in SET for better search results.`);
-  }
-
-  saveActiveSession(historyMessages());
-  cb.onDone?.();
+  // Budget spent on searches — force an answer instead of ending the turn
+  // empty. The nudge is ephemeral: history keeps only the reply.
+  emit({ type: 'round-started', round: MAX_TOOL_ROUNDS });
+  const msgs = [...buildMessages(), { role: 'user', content: BUDGET_NUDGE }];
+  const status = await runRound(msgs, false, ropts, emit);
+  if (status !== 'ok') return failSummary(MAX_TOOL_ROUNDS);
+  const final = lastContent();
+  const finalText = final.trim()
+    ? final
+    : `Search budget (${MAX_TOOL_ROUNDS} rounds) spent without a usable answer. Try a narrower question, or add a Tavily/Brave/Jina key in SET for better search results.`;
+  emit({ type: 'round-final', text: finalText });
+  persist?.();
+  emit({ type: 'done' });
+  return { ok: true, rounds: MAX_TOOL_ROUNDS + 1, text: finalText };
 }
