@@ -631,7 +631,7 @@ async function wikiOpenSearchSource(q, sig, transport) {
   let out = ''; for (let i=0;i<Math.min(3,titles.length);i++) { const title=titles[i]; const url=urls[i]||`https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g,'_'))}`; const s=summaries[i]?.status==='fulfilled'?summaries[i].value:null; const extract=s?.extract?String(s.extract).slice(0,260):(Array.isArray(os?.[2])?String(os[2][i]||'').slice(0,220):''); out+=fmt('WIKI OPENSEARCH', `${title}${s?.type==='disambiguation'?' (disambiguation)':''}`, url, (extract||title).trim()); } return out;
 }
 async function openverseSource(q, sig, transport, limiter) {
-  const visualRe = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|architecture|map|chart|poster|wallpaper|thumbnail|illustration|flag|portrait|landscape)\b/i;
+  const visualRe = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b/i;
   if (!visualRe.test(q) && q.trim().split(/\s+/).length < 2) return '';
   if (limiter) await limiter.take();
   const j = await cachedJson(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=3`, sig, transport);
@@ -751,7 +751,7 @@ export function applyWikiCaps(blocks) {
   const markdown = Array.isArray(blocks) ? blocks.join('') : String(blocks || '');
   if (!markdown) return '';
   const raw = markdown.split(/(?=### \[)/).filter(Boolean);
-  const counts = { WIKIPEDIA:0, WIKIDATA:0, 'WIKIDATA SPARQL':0 };
+  const counts = { WIKIPEDIA:0, WIKIDATA:0, 'WIKIDATA SPARQL':0, 'WIKI OPENSEARCH':0 };
   const out = [];
   for (const b of raw) {
     const m = b.match(/^### \[([^\]]+)\]/);
@@ -765,6 +765,9 @@ export function applyWikiCaps(blocks) {
     } else if (tag === 'WIKIDATA SPARQL') {
       if (counts['WIKIDATA SPARQL'] >= 2) continue;
       counts['WIKIDATA SPARQL']++;
+    } else if (tag === 'WIKI OPENSEARCH') {
+      if (counts['WIKI OPENSEARCH'] >= 2) continue;
+      counts['WIKI OPENSEARCH']++;
     }
     // DBPEDIA and others uncapped
     out.push(b);
@@ -777,7 +780,6 @@ function keys() {
   try { return JSON.parse(localStorage['asm.settings'] || '{}'); } catch { return {}; }
 }
 
-// Map timed job name -> display TAG for markdown grouping and UI header
 const TAG = {
   wikipedia: 'WIKIPEDIA',
   hn: 'HACKER NEWS',
@@ -804,6 +806,10 @@ const TAG = {
   jinanews: 'JINA NEWS',
   dictionary: 'DICTIONARY',
   tvmaze: 'TVMAZE',
+  ddgia: 'DDG IA',
+  wiki_os: 'WIKI OPENSEARCH',
+  openverse: 'OPENVERSE',
+  mwmbl: 'MWMBl',
 };
 
 /** Shipping Source names — the Fan-out's job names. The Sweep validates its canned corpus keys against this list. */
@@ -865,6 +871,10 @@ export async function webSearch(query, { transport = fetch } = {}) {
     withMs('jinanews', (sig) => jinanewsSource(query, sig, transport, jinaLimiter)),
     withMs('dictionary', (sig) => dictionarySource(query, sig, transport)),
     withMs('tvmaze', (sig) => tvmazeSource(query, sig, transport)),
+    withMs('ddgia', (sig) => ddgiaSource(query, sig, transport)),
+    withMs('wiki_os', (sig) => wikiOpenSearchSource(query, sig, transport)),
+    withMs('openverse', (sig) => openverseSource(query, sig, transport, anonLimiter)),
+    withMs('mwmbl', (sig) => mwmblSource(query, sig, transport)),
   ];
   const settled = await Promise.allSettled(jobs);
   const metas = settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
