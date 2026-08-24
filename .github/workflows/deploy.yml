@@ -23,9 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y wabt
+      - run: ./build.sh
       - name: Test (node-safe suites)
         run: node --test test/sources.test.mjs test/guard.test.mjs test/tool-loop.mjs
-      - run: ./build.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
