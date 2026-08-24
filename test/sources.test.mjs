@@ -23,7 +23,7 @@ globalThis.sessionStorage.clear();
 if (typeof performance === 'undefined') globalThis.performance = { now: () => Date.now() };
 
 const mod = await import('../js/search.js');
-const { webSearch, smartSlice, applyWikiCaps, createLimiter, SOURCE_NAMES, jinaLimiter } = mod;
+const { webSearch, smartSlice, applyWikiCaps, createLimiter, SOURCE_NAMES, jinaLimiter, anonLimiter } = mod;
 function fmt(tag,title,url,snip){ return `### [${tag}] ${title}\n${url}\n${snip}\n\n`; }
 function clearCache(){ globalThis.sessionStorage.clear(); }
 
@@ -148,7 +148,7 @@ console.log('createLimiter PASS');
 }
 
 // ── per-source via fake transport ──
-function reset(){ clearCache(); if (jinaLimiter && jinaLimiter._reset) jinaLimiter._reset(); }
+function reset(){ clearCache(); if (jinaLimiter && jinaLimiter._reset) jinaLimiter._reset(); if (anonLimiter && anonLimiter._reset) anonLimiter._reset(); if (mod.anonLimiter && mod.anonLimiter._reset) mod.anonLimiter._reset(); }
 // espn happy
 {
   reset();
@@ -508,4 +508,310 @@ console.log('espn team map PASS');
   assert.ok(Array.isArray(r.perSource));
 }
 
+// ── DDG IA happy / flat RelatedTopics ──
+{
+  reset();
+  const fake = makeFake({
+    'api.duckduckgo.com': { AbstractText:'', Answer:'', Heading:'Duck', AbstractURL:'https://duckduckgo.com/?q=python', AbstractSource:'DuckDB', RelatedTopics:[{Text:'A - python lang', Result:'<a href="https://example.com/a">A</a>', FirstURL:'https://example.com/a'}, {Topics:[{Text:'B nested', Result:'<a>B</a>', FirstURL:'https://example.com/b'}]}] }
+  });
+  const r = await webSearch('python programming', {transport: fake});
+  assert.ok(r.markdown.includes('### [DDG IA]'), 'ddgia happy includes DDG IA');
+  assert.ok(r.markdown.includes('via DuckDuckGo'), 'ddgia attribution via DuckDuckGo');
+  assert.ok(r.perSource.some(p=>p.tag==='DDG IA'), 'ddgia perSource includes DDG IA');
+  assert.ok(!r.failures.includes('ddgia'), 'ddgia not in failures');
+  // flat RelatedTopics yields 2 blocks (both Result hits)
+  const ddgBlocks = (r.markdown.match(/### \[DDG IA\]/g)||[]).length;
+  assert.equal(ddgBlocks, 2, 'ddgia flat RelatedTopics yields 2 blocks');
+}
+console.log('ddgia happy PASS');
+
+// ── DDG IA empty → heuristic-miss '' ──
+{
+  reset();
+  const fake = makeFake({ 'api.duckduckgo.com': { AbstractText:'', Answer:'', RelatedTopics:[] } });
+  const r = await webSearch('python programming', {transport: fake});
+  assert.ok(!r.markdown.includes('### [DDG IA]'), 'ddgia empty no block');
+  assert.ok(!r.perSource.some(p=>p.tag==='DDG IA'), 'ddgia empty no perSource');
+  assert.ok(!r.failures.includes('ddgia'), 'ddgia empty miss not failure');
+}
+console.log('ddgia empty PASS');
+
+// ── DDG IA q length gates ──
+{
+  // q='ab' (2 chars) -> skip, no fetch
+  reset();
+  const counts={};
+  const fake = makeFake({ 'api.duckduckgo.com': { AbstractText:'hello', Answer:'', RelatedTopics:[{Text:'x', Result:'<a>x</a>', FirstURL:'https://example.com/x'}] } }, counts);
+  const r1 = await webSearch('ab', {transport: fake});
+  assert.ok(!r1.markdown.includes('### [DDG IA]'), 'ddgia q<3 skip no block');
+  assert.equal(counts['api.duckduckgo.com']||0, 0, 'ddgia q<3 no fetch');
+  // q 201 chars trimmed >200 -> skip
+  reset();
+  const counts2={};
+  const fake2 = makeFake({ 'api.duckduckgo.com': { AbstractText:'hello', Answer:'', RelatedTopics:[{Text:'x', Result:'<a>x</a>', FirstURL:'https://example.com/x'}] } }, counts2);
+  const long = 'a'.repeat(201);
+  const r2 = await webSearch(long, {transport: fake2});
+  assert.ok(!r2.markdown.includes('### [DDG IA]'), 'ddgia q>200 skip');
+  assert.equal(counts2['api.duckduckgo.com']||0, 0, 'ddgia q>200 no fetch');
+  // trimmed 199 with surrounding spaces -> fires (trimmed length 199)
+  reset();
+  const counts3={};
+  const fake3 = makeFake({ 'api.duckduckgo.com': { AbstractText:'', Answer:'', RelatedTopics:[{Text:'ok', Result:'<a>ok</a>', FirstURL:'https://example.com/ok'}] } }, counts3);
+  const q3 = '  '+'a'.repeat(199)+'  ';
+  const r3 = await webSearch(q3, {transport: fake3});
+  assert.ok(r3.markdown.includes('### [DDG IA]'), 'ddgia trimmed 199 fires');
+  assert.ok((counts3['api.duckduckgo.com']||0) > 0, 'ddgia trimmed 199 fetched');
+}
+console.log('ddgia length gates PASS');
+
+// ── WIKI OPENSEARCH skip who is/define ──
+{
+  reset();
+  const fake = makeFake({
+    'w/api.php?action=opensearch': ['q',['Ada Lovelace'],['desc'],['https://en.wikipedia.org/wiki/Ada_Lovelace']],
+    'api/rest_v1/page/summary/Ada_Lovelace': {extract:'Ada summary', type:'standard'}
+  });
+  const r1 = await webSearch('who is Ada Lovelace', {transport: fake});
+  assert.ok(!r1.markdown.includes('### [WIKI OPENSEARCH]'), 'wiki_os skip who is');
+  assert.ok(!r1.perSource.some(p=>p.tag==='WIKI OPENSEARCH'), 'wiki_os who is no perSource');
+  const r2 = await webSearch('define serendipity', {transport: fake});
+  assert.ok(!r2.markdown.includes('### [WIKI OPENSEARCH]'), 'wiki_os skip define');
+}
+console.log('wiki_os skip PASS');
+
+// ── WIKI OPENSEARCH happy with parallel summary fallback ──
+{
+  reset();
+  const fake = makeFake({
+    'w/api.php?action=opensearch': ['q',['Ada Lovelace','Ada Lovelace2'],['',''],['https://en.wikipedia.org/wiki/Ada_Lovelace','https://en.wikipedia.org/wiki/Ada_Lovelace2']],
+    'api/rest_v1/page/summary/Ada_Lovelace2': {extract:'second', type:'disambiguation'},
+    'api/rest_v1/page/summary/Ada_Lovelace': {extract:'Ada summary', type:'standard'}
+  });
+  const r = await webSearch('ada lovelace', {transport: fake});
+  assert.ok(r.markdown.includes('### [WIKI OPENSEARCH]'), 'wiki_os happy block present');
+  const blocks = (r.markdown.match(/### \[WIKI OPENSEARCH\]/g)||[]).length;
+  assert.equal(blocks, 2, 'wiki_os happy 2 blocks');
+  assert.ok(r.markdown.includes('Ada Lovelace2 (disambiguation)'), 'wiki_os disambiguation suffix');
+  const ps = r.perSource.find(p=>p.tag==='WIKI OPENSEARCH');
+  assert.ok(ps && ps.hits===2, 'wiki_os perSource hit 2');
+  assert.ok(!r.failures.includes('wiki_os'), 'wiki_os not in failures');
+  // verify limit 3 param not needed but opensearch titles sliced to 3 — ensure 3-limit still works (mock 2 only)
+  assert.ok(r.markdown.includes('Ada summary'), 'wiki_os uses summary extract');
+}
+console.log('wiki_os happy PASS');
+
+// ── WIKI OPENSEARCH summary fallback when REST fails ──
+{
+  reset();
+  // opensearch returns 3 titles with os[2] fallback extracts; rest_v1 throws -> should still emit via os[2]
+  const transport = async (url, opts={}) => {
+    if (url.includes('w/api.php?action=opensearch')) {
+      return { ok:true, status:200, json: async()=> ['q',['Title A','Title B','Title C'],['fallback A','fallback B','fallback C'],['https://en.wikipedia.org/wiki/Title_A','https://en.wikipedia.org/wiki/Title_B','https://en.wikipedia.org/wiki/Title_C']], text: async()=> '' };
+    }
+    if (url.includes('api/rest_v1/page/summary')) {
+      throw new Error('rest 500');
+    }
+    return { ok:true, status:200, json: async()=> ({}), text: async()=> '' };
+  };
+  const r = await webSearch('ada lovelace', {transport});
+  assert.ok(r.markdown.includes('### [WIKI OPENSEARCH]'), 'wiki_os fallback still emits block despite rest failure');
+  // should use os[2] fallback extracts
+  assert.ok(r.markdown.includes('fallback A') || r.markdown.includes('Title A'), 'wiki_os fallback uses os[2] or title');
+  assert.ok(!r.markdown.includes('undefined'), 'wiki_os fallback no undefined leak');
+  // Promise.allSettled ensures no throw; markdown still present, failures may be empty (source handled fallback)
+  assert.ok(Array.isArray(r.failures), 'failures still array');
+}
+console.log('wiki_os fallback PASS');
+
+// ── MWMBl ?s= param correctness ──
+{
+  reset();
+  const counts={};
+  const fake = makeFake({ 'api.mwmbl.org/search/?s=': [{title:'T', url:'https://example.com/m', extract:'snip'}] }, counts);
+  const r = await webSearch('python programming', {transport: fake});
+  assert.ok(r.markdown.includes('### [MWMBl]'), 'mwmbl happy block');
+  assert.ok(r.markdown.includes('via mwmbl'), 'mwmbl attribution');
+  assert.ok(r.perSource.some(p=>p.tag==='MWMBl'), 'mwmbl perSource includes MWMBl');
+  assert.ok((counts['api.mwmbl.org/search/?s=']||0) >0, 'mwmbl called with ?s=');
+  // ensure ?q= not called (different key)
+  assert.equal(counts['api.mwmbl.org/search/?q=']||0, 0, 'mwmbl not called with ?q=');
+  // array shape also supports {results:Array}
+  reset();
+  const fake2 = makeFake({ 'api.mwmbl.org/search/?s=': {results:[{title:'T2', url:'https://example.com/m2', extract:'snip2'}]} });
+  const r2 = await webSearch('python programming', {transport: fake2});
+  assert.ok(r2.markdown.includes('### [MWMBl]'), 'mwmbl {results:Array} shape works');
+  assert.ok(r2.markdown.includes('T2'), 'mwmbl results shape title preserved');
+  // q<3 skip
+  reset();
+  const counts3={};
+  const fake3 = makeFake({ 'api.mwmbl.org/search/?s=': [{title:'T', url:'https://example.com/m', extract:'snip'}] }, counts3);
+  const r3 = await webSearch('ab', {transport: fake3});
+  assert.ok(!r3.markdown.includes('### [MWMBl]'), 'mwmbl q<3 skip');
+  assert.equal(counts3['api.mwmbl.org/search/?s=']||0, 0, 'mwmbl q<3 no fetch');
+}
+console.log('mwmbl PASS');
+
+// ── OPENVERSE visual vs token gate + attribution ──
+{
+  // visual single-token 'cat' -> fires
+  reset();
+  const fake = makeFake({
+    'api.openverse.org': {results:[{title:'Cute cat', foreign_landing_url:'https://example.com/cat', creator:'Alice', license:'by', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by/4.0/', url:'https://images.example.com/cat.jpg'}]}
+  });
+  const r1 = await webSearch('cat', {transport: fake});
+  assert.ok(r1.markdown.includes('### [OPENVERSE]'), 'openverse visual single-token cat fires');
+  assert.ok(r1.markdown.includes('by Alice'), 'openverse creator attribution');
+  assert.ok(r1.markdown.includes('by 4.0'), 'openverse license string');
+  assert.ok(r1.markdown.includes('via Openverse'), 'openverse via attribution');
+  // non-visual single-token 'python' -> no fire, no limiter, no fetch
+  reset();
+  const counts={};
+  const fake2 = makeFake({ 'api.openverse.org': {results:[{title:'x', foreign_landing_url:'https://example.com/x', creator:'Bob', license:'by', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by/4.0/'}]} }, counts);
+  const r2 = await webSearch('python', {transport: fake2});
+  assert.ok(!r2.markdown.includes('### [OPENVERSE]'), 'openverse non-visual single-token no block');
+  assert.equal(counts['api.openverse.org']||0, 0, 'openverse non-visual single-token no fetch');
+  // non-visual multi-token 'python programming' -> fires
+  reset();
+  const fake3 = makeFake({
+    'api.openverse.org': {results:[{title:'Py', foreign_landing_url:'https://example.com/py', creator:'Carol', license:'by-sa', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by-sa/4.0/'}]}
+  });
+  const r3 = await webSearch('python programming', {transport: fake3});
+  assert.ok(r3.markdown.includes('### [OPENVERSE]'), 'openverse non-visual multi-token fires');
+  // visual multi-token also fires
+  reset();
+  const fake4 = makeFake({
+    'api.openverse.org': {results:[{title:'Visual', foreign_landing_url:'https://example.com/v', creator:'Dave', license:'cc0', license_version:'1.0', license_url:'https://creativecommons.org/publicdomain/zero/1.0/'}]}
+  });
+  const r4 = await webSearch('cat picture gallery', {transport: fake4});
+  assert.ok(r4.markdown.includes('### [OPENVERSE]'), 'openverse visual multi-token fires');
+}
+console.log('openverse gate PASS');
+
+// ── OPENVERSE limiter scope + cache ──
+{
+  // DDG and WIKI should bypass anonLimiter; only OPENVERSE uses it
+  reset();
+  const origTake = mod.anonLimiter.take.bind(mod.anonLimiter);
+  let anonCalls = 0;
+  mod.anonLimiter.take = async () => { anonCalls++; return origTake(); };
+  // also ensure alias anonLimiter is same object
+  const counts={};
+  const fake = makeFake({
+    'api.duckduckgo.com': { AbstractText:'', Answer:'', RelatedTopics:[{Text:'A', Result:'<a>A</a>', FirstURL:'https://example.com/a'}] },
+    'w/api.php?action=opensearch': ['q',['Ada'],['desc'],['https://en.wikipedia.org/wiki/Ada']],
+    'api/rest_v1/page/summary/Ada': {extract:'Ada summary', type:'standard'},
+    'api.openverse.org': {results:[{title:'Cat', foreign_landing_url:'https://example.com/cat', creator:'Eve', license:'by', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by/4.0/'}]},
+    'api.mwmbl.org/search/?s=': [{title:'M', url:'https://example.com/m', extract:'snip'}]
+  }, counts);
+  anonCalls = 0;
+  const r = await webSearch('python programming', {transport: fake});
+  assert.ok(r.markdown.includes('### [DDG IA]') && r.markdown.includes('### [WIKI OPENSEARCH]') && r.markdown.includes('### [OPENVERSE]') && r.markdown.includes('### [MWMBl]'), 'all 4 Path A blocks present for limiter scope test');
+  assert.equal(anonCalls, 1, 'anonLimiter take called only once for OPENVERSE, not for DDG/WIKI/MWMBl');
+  mod.anonLimiter.take = origTake;
+  if (anonLimiter && anonLimiter.take && anonLimiter !== mod.anonLimiter) anonLimiter.take = origTake;
+  // cache hit reuse: second call should hit sessionStorage and not call limiter again
+  reset();
+  let anonCalls2 = 0;
+  const origTake2 = mod.anonLimiter.take.bind(mod.anonLimiter);
+  mod.anonLimiter.take = async () => { anonCalls2++; return origTake2(); };
+  const counts2={};
+  const fake2 = makeFake({
+    'api.openverse.org': {results:[{title:'Cached cat', foreign_landing_url:'https://example.com/cat2', creator:'Frank', license:'by', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by/4.0/'}]}
+  }, counts2);
+  await webSearch('cat picture', {transport: fake2});
+  const c1 = counts2['api.openverse.org']||0;
+  const calls1 = anonCalls2;
+  await webSearch('cat picture', {transport: fake2});
+  const c2 = counts2['api.openverse.org']||0;
+  // second call cache hit -> no extra fetch and no extra limiter take
+  assert.equal(c2, c1, 'openverse cache hit no second fetch');
+  assert.equal(anonCalls2, calls1, 'openverse cache hit no second limiter take');
+  mod.anonLimiter.take = origTake2;
+}
+console.log('openverse limiter/cache PASS');
+
+// ── applyWikiCaps WIKI OPENSEARCH ≤2 independent cap ──
+{
+  let md = '';
+  for (let i=0;i<3;i++) md += fmt('WIKI OPENSEARCH',`WO${i}`,`https://wo${i}.example`,`snip ${i}`);
+  for (let i=0;i<2;i++) md += fmt('WIKIPEDIA',`W${i}`,`https://w${i}.example`,`snip`);
+  for (let i=0;i<1;i++) md += fmt('DBPEDIA',`P${i}`,`https://p${i}.example`,`snip`);
+  const capped = applyWikiCaps(md);
+  assert.equal((capped.match(/### \[WIKI OPENSEARCH\]/g)||[]).length, 2, 'WIKI OPENSEARCH capped at 2');
+  assert.equal((capped.match(/### \[WIKIPEDIA\]/g)||[]).length, 2, 'WIKIPEDIA still 2');
+  assert.equal((capped.match(/### \[DBPEDIA\]/g)||[]).length, 1, 'DBPEDIA uncapped 1');
+  // independent from WIKIDATA caps
+  let md2='';
+  for (let i=0;i<3;i++) md2 += fmt('WIKI OPENSEARCH',`WO${i}`,`https://wo2_${i}.example`,`snip`);
+  for (let i=0;i<3;i++) md2 += fmt('WIKIDATA',`D${i}`,`https://d${i}.example`,`snip`);
+  const capped2 = applyWikiCaps(md2);
+  assert.equal((capped2.match(/### \[WIKI OPENSEARCH\]/g)||[]).length, 2, 'WIKI OPENSEARCH independent cap 2');
+  assert.equal((capped2.match(/### \[WIKIDATA\]/g)||[]).length, 2, 'WIKIDATA independent cap 2');
+  assert.equal((capped2.match(/### \[(WIKIDATA|WIKI OPENSEARCH)\]/g)||[]).length, 4, 'independent caps total 4');
+  // array input
+  const arrCap = applyWikiCaps([fmt('WIKI OPENSEARCH','A','https://a0.example','x'), fmt('WIKI OPENSEARCH','B','https://b0.example','x'), fmt('WIKI OPENSEARCH','C','https://c0.example','x')]);
+  assert.equal((arrCap.match(/### \[WIKI OPENSEARCH\]/g)||[]).length, 2, 'array input WIKI OPENSEARCH capped');
+}
+console.log('applyWikiCaps WIKI OPENSEARCH PASS');
+
+// ── 29-job Fan-out integration ──
+{
+  reset();
+  assert.equal(SOURCE_NAMES.length, 29, 'SOURCE_NAMES length 29');
+  assert.ok(SOURCE_NAMES.includes('ddgia'), 'SOURCE_NAMES includes ddgia');
+  assert.ok(SOURCE_NAMES.includes('wiki_os'), 'SOURCE_NAMES includes wiki_os');
+  assert.ok(SOURCE_NAMES.includes('openverse'), 'SOURCE_NAMES includes openverse');
+  assert.ok(SOURCE_NAMES.includes('mwmbl'), 'SOURCE_NAMES includes mwmbl');
+  // fan-out with all 4 Path A fakes + verify markdown budget, perSource, failures never throw
+  const fake = makeFake({
+    'api.duckduckgo.com': { AbstractText:'', Answer:'', RelatedTopics:[{Text:'A', Result:'<a>A</a>', FirstURL:'https://example.com/a'}] },
+    'w/api.php?action=opensearch': ['q',['Ada','Ada2'],['',''],['https://en.wikipedia.org/wiki/Ada','https://en.wikipedia.org/wiki/Ada2']],
+    'api/rest_v1/page/summary/Ada': {extract:'Ada summary', type:'standard'},
+    'api/rest_v1/page/summary/Ada2': {extract:'Ada2 summary', type:'standard'},
+    'api.openverse.org': {results:[{title:'Cat art', foreign_landing_url:'https://example.com/cat', creator:'Grace', license:'by', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by/4.0/'}]},
+    'api.mwmbl.org/search/?s=': [{title:'Mwmbl T', url:'https://example.com/m', extract:'snip'}]
+  });
+  const r = await webSearch('test query with python programming and cat image', {transport: fake});
+  assert.ok(r.markdown.length <= 12000, `markdown budget <=12000 got ${r.markdown.length}`);
+  assert.ok(Array.isArray(r.failures), 'failures array');
+  assert.ok(Array.isArray(r.perSource), 'perSource array');
+  // failures never throw - even with partial failures, webSearch returns
+  assert.ok(r.perSource.length >= 4, `perSource >=4 Path A blocks got ${r.perSource.length}`);
+  assert.ok(r.perSource.every(p=> typeof p.ms==='number' && p.ms < 800), 'perSource ms <800 for fake transport');
+  // dedup: WIKIPEDIA and WIKI OPENSEARCH same URL -> norm dedup keeps first only
+  reset();
+  const dedupFake = makeFake({
+    'api.duckduckgo.com': { AbstractText:'', Answer:'', RelatedTopics:[{Text:'X', Result:'<a>X</a>', FirstURL:'https://en.wikipedia.org/wiki/Dedup_Test'}] },
+    'w/api.php?action=opensearch': ['q',['Dedup_Test'],['desc'],['https://en.wikipedia.org/wiki/Dedup_Test']],
+    'api/rest_v1/page/summary/Dedup_Test': {extract:'dedup summary', type:'standard'},
+    'api.openverse.org': {results:[]}, // force empty so only these two dedup
+    'api.mwmbl.org/search/?s=': []
+  });
+  // Need wikipedia to return same URL: mock wikipedia query endpoint
+  const dedupFake2 = async (url, opts={}) => {
+    if (url.includes('w/api.php?action=query') && url.includes('list=search')) {
+      return { ok:true, status:200, json: async()=> ({query:{search:[{title:'Dedup_Test', snippet:'snip'}]}}), text: async()=> '' };
+    }
+    return dedupFake(url, opts);
+  };
+  const r2 = await webSearch('dedup test query cat image', {transport: dedupFake2});
+  // The dedup URL should appear only once in markdown
+  const occurrences = (r2.markdown.match(/https:\/\/en\.wikipedia\.org\/wiki\/Dedup_Test/g)||[]).length;
+  assert.equal(occurrences, 1, 'dedup keeps first URL only once across WIKIPEDIA and WIKI OPENSEARCH');
+  // failures never throw: simulate one source error, others still succeed
+  reset();
+  const failFake = makeFake({
+    'api.duckduckgo.com': {__error:true, msg:'500'},
+    'w/api.php?action=opensearch': ['q',['Ada'],['desc'],['https://en.wikipedia.org/wiki/Ada']],
+    'api/rest_v1/page/summary/Ada': {extract:'ok', type:'standard'},
+    'api.openverse.org': {results:[{title:'T', foreign_landing_url:'https://example.com/t', creator:'H', license:'by', license_version:'4.0', license_url:'https://creativecommons.org/licenses/by/4.0/'}]},
+    'api.mwmbl.org/search/?s=': [{title:'M', url:'https://example.com/m2', extract:'snip'}]
+  });
+  const r3 = await webSearch('python programming cat image', {transport: failFake});
+  assert.ok(r3.failures.includes('ddgia'), 'fan-out ddgia failure recorded not thrown');
+  assert.ok(r3.markdown.includes('### [WIKI OPENSEARCH]') && r3.markdown.includes('### [OPENVERSE]'), 'other sources still present after one failure');
+}
+console.log('29-job fan-out PASS');
+
 console.log('ALL SOURCES PASS');
+console.log('PATH A 29 PASS');
