@@ -120,6 +120,22 @@ _Avoid_: dictionary api, define provider
 A TV-show Source at `api.tvmaze.com/search/shows?q=` that fires on `tv show|series|episode`.
 _Avoid_: tv api, show provider
 
+**DDG IA**:
+A snippet Source at `api.duckduckgo.com/?q=&format=json` that fires on `q` 3–200 chars and returns `AbstractText`/`Answer`/`RelatedTopics`; attribution via `AbstractSource`.
+_Avoid_: duckduckgo api, ddg provider
+
+**WIKI OPENSEARCH**:
+A suggest Source at `en.wikipedia.org/w/api.php?action=opensearch&origin=*` + `api/rest_v1/page/summary/` that fires on `q` ≥3 (skip `^who is`/`^define`) and returns title/url/extract for top 3 hits.
+_Avoid_: wiki suggest, opensearch provider
+
+**OPENVERSE**:
+An image Source at `api.openverse.org/v1/images/?q=&page_size=3` that fires when visual intent `\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon)\b` or `q` has ≥2 tokens; needs `Origin` for `ACAO: *`, anon 20/min burst.
+_Avoid_: openverse api, image search provider
+
+**MWMBl**:
+A general-web Source at `api.mwmbl.org/search/?s=` (note `s` not `q`; `?q=` returns 422) that fires on `q` ≥3 and returns AGPL-3.0 crawl JSON with `ACAO: *`.
+_Avoid_: mwmbl api, crawl provider
+
 **Candidate Source**:
 A Source evaluated in research harvest but not yet in the `webSearch` fan-out. Filtered by the Inclusion Checklist before it ships.
 _Avoid_: candidate, potential source
@@ -129,11 +145,11 @@ The gates a Candidate Source must clear to ship: license OSI/CC0/ODbL, CORS `*` 
 _Avoid_: criteria, filter
 
 **Fan-out**:
-The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each job is a `timed(name, fn, failures)` Source. Default is ~25 keyless Sources (12 code/science including upgraded STACK OVERFLOW + 13 general-purpose: ESPN, MLB, COINGECKO, FRANKFURTER, OPEN-METEO, WORLD BANK, END OF LIFE, CURRENT EVENTS, WIKIDATA SPARQL, JINA WEB, JINA NEWS, DICTIONARY, TVMAZE); no key-gated Sources ship by default.
+The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each job is a `timed(name, fn, failures)` Source. Default is 29 keyless Sources (12 code/science including upgraded STACK OVERFLOW + 13 general-purpose: ESPN, MLB, COINGECKO, FRANKFURTER, OPEN-METEO, WORLD BANK, END OF LIFE, CURRENT EVENTS, WIKIDATA SPARQL, JINA WEB, JINA NEWS, DICTIONARY, TVMAZE + 4 general-web: DDG IA, WIKI OPENSEARCH, OPENVERSE, MWMBl); no key-gated Sources ship by default.
 _Avoid_: batch, fanout
 
 **Ranking**:
-Ordering of deduped `fmt` blocks before the 12k `markdown.slice`. Grouped by Source weight (job order), then `applyWikiCaps` (WIKIPEDIA ≤2 blocks, WIKIDATA ≤2 via header `^### \[TAG\]`, DBPEDIA uncapped), then `smartSlice` term-scored selection preserving original order up to budget (END OF LIFE blocks gain `EOL_BOOST` when the query names a tracked product) — chat model does relevance ranking when it synthesizes the answer, not `webSearch` itself.
+Ordering of deduped `fmt` blocks before the 12k `markdown.slice`. Grouped by Source weight (job order), then `applyWikiCaps` (WIKIPEDIA ≤2 blocks, WIKIDATA ≤2, WIKIDATA SPARQL ≤2, WIKI OPENSEARCH ≤2 via header `^### \[TAG\]`, DBPEDIA uncapped), then `smartSlice` term-scored selection preserving original order up to budget (END OF LIFE blocks gain `EOL_BOOST` when the query names a tracked product) — chat model does relevance ranking when it synthesizes the answer, not `webSearch` itself.
 _Avoid_: scoring, sorting, ordering
 **Hedge Pass**:
 The single forced tools-less rewrite inserted after a natural round-final when `hedgeNeeded(answer, evidence)` is true — the answer contains existence-denial phrasing (`there is no|does not exist|no such`) and Tool-result evidence is empty or lacks the denied subject. The Bridge re-invokes the model once with `HEDGE_PASS_NUDGE` (honest-uncertainty rewrite instruction, reusing `BUDGET_NUDGE` plumbing) and replaces the final text; at most one per Turn.

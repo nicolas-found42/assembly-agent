@@ -542,9 +542,10 @@ export function createLimiter(perMinute) {
     // test helper: reset timing
     _reset(){ last=0; queue=Promise.resolve(); }
   };
-}
 // Module-scoped jina limiter — 20/min enforced across webSearch calls/turns
 export const jinaLimiter = createLimiter(20);
+// Anon limiter for OPENVERSE (15/min) — per research sketch only openverse uses it; ddgia/wiki/mwmbl use cachedJson alone
+export const anonLimiter = createLimiter(15);
 async function jinaHelper(q, tag, target, sig, transport, limiter) {
   const url = `https://r.jina.ai/${target}`;
   const k = 'asm:' + hashUrl(url);
@@ -595,6 +596,55 @@ async function tvmazeSource(q, sig, transport) {
     const s = r.show || r;
     return fmt('TVMAZE', s.name || q.slice(0,40), s.url || `https://api.tvmaze.com/shows/${s.id || ''}`, stripTags(s.summary || '').slice(0,220));
   }).join('');
+}
+
+// ── Path A general-web Sources (ADR 0009) — pure static, keyless CORS * ──
+async function ddgiaSource(q, sig, transport) {
+  if (!q || q.trim().length < 3 || q.length > 200) return '';
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&pretty=0&no_html=1&skip_disambig=1`;
+  const j = await cachedJson(url, sig, transport);
+  const absText = String(j?.AbstractText || '').trim();
+  const answer = String(j?.Answer || '').trim();
+  const heading = String(j?.Heading || q).trim();
+  const absUrl = String(j?.AbstractURL || '').trim();
+  const absSrc = String(j?.AbstractSource || 'DuckDuckGo').trim();
+  const topics = Array.isArray(j?.RelatedTopics) ? j.RelatedTopics : [];
+  const flat = [];
+  for (const t of topics) { if (t?.Result) flat.push(t); else if (Array.isArray(t?.Topics)) for (const s of t.Topics) if (s?.Result) flat.push(s); }
+  if (!absText && !answer && !flat.length) return '';
+  let out = '';
+  if (absText) out += fmt('DDG IA', heading, absUrl || `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, `${absText.slice(0,260)} — via ${absSrc} / DuckDuckGo Instant Answer`);
+  else if (answer) out += fmt('DDG IA', heading, absUrl || `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, `${stripTags(answer).slice(0,260)} — via DuckDuckGo Instant Answer`);
+  for (const t of flat.slice(0,3)) {
+    const title = stripTags(t.Text || t.Result || '').slice(0,80) || heading;
+    const tUrl = t.FirstURL || absUrl || `https://duckduckgo.com/?q=${encodeURIComponent(q)}`;
+    const snip = stripTags(t.Text || t.Result || '').slice(0,220); if (!snip) continue;
+    out += fmt('DDG IA', title, tUrl, `${snip} — via DuckDuckGo`);
+  } return out;
+}
+async function wikiOpenSearchSource(q, sig, transport) {
+  if (!q || q.trim().length < 3) return ''; if (/^(who is|define\s)/i.test(q.trim())) return '';
+  const osUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=3&format=json&origin=*`;
+  const os = await cachedJson(osUrl, sig, transport);
+  const titles = Array.isArray(os?.[1]) ? os[1] : []; const urls = Array.isArray(os?.[3]) ? os[3] : []; if (!titles.length) return '';
+  const summaries = await Promise.allSettled(titles.slice(0,2).map((title) => cachedJson(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`, sig, transport)));
+  let out = ''; for (let i=0;i<Math.min(3,titles.length);i++) { const title=titles[i]; const url=urls[i]||`https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g,'_'))}`; const s=summaries[i]?.status==='fulfilled'?summaries[i].value:null; const extract=s?.extract?String(s.extract).slice(0,260):(Array.isArray(os?.[2])?String(os[2][i]||'').slice(0,220):''); out+=fmt('WIKI OPENSEARCH', `${title}${s?.type==='disambiguation'?' (disambiguation)':''}`, url, (extract||title).trim()); } return out;
+}
+async function openverseSource(q, sig, transport, limiter) {
+  const visualRe = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|architecture|map|chart|poster|wallpaper|thumbnail|illustration|flag|portrait|landscape)\b/i;
+  if (!visualRe.test(q) && q.trim().split(/\s+/).length < 2) return '';
+  if (limiter) await limiter.take();
+  const j = await cachedJson(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=3`, sig, transport);
+  const results = Array.isArray(j?.results)?j.results:[]; if(!results.length) return '';
+  return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
+}
+async function mwmblSource(q, sig, transport) {
+  if (!q || q.trim().length < 3) return '';
+  const url = `https://api.mwmbl.org/search/?s=${encodeURIComponent(q)}`;
+  const j = await cachedJson(url, sig, transport);
+  const results = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : []);
+  if (!results.length) return '';
+  return results.slice(0,3).map((r) => fmt('MWMBl', (r.title || r.name || q.slice(0,60)).slice(0,80), r.url || r.link || url, `${stripTags(r.extract || r.snippet || r.description || '').slice(0,220)} — via mwmbl`)).join('');
 }
 
 // ── smartSlice + caps — exported ──
