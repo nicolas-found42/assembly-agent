@@ -129,7 +129,7 @@ A suggest Source at `en.wikipedia.org/w/api.php?action=opensearch&origin=*` + `a
 _Avoid_: wiki suggest, opensearch provider
 
 **OPENVERSE**:
-An image Source at `api.openverse.org/v1/images/?q=&page_size=3` that fires when visual intent `\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon)\b` or `q` has ≥2 tokens; needs `Origin` for `ACAO: *`, anon 20/min burst.
+An image Source at `api.openverse.org/v1/images/?q=&page_size=3` that fires when visual intent `\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b` or `q` has ≥2 tokens; needs `Origin` for `ACAO: *`, anon limiter 15/min (upstream 20/min burst).
 _Avoid_: openverse api, image search provider
 
 **MWMBl**:

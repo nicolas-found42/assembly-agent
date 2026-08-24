@@ -14,7 +14,7 @@ Ship pure-static Path A with 4 Sources, all keyless CORS * and GH Pages–compat
 
 - DDG IA `https://api.duckduckgo.com/?q=&format=json&pretty=0&no_html=1&skip_disambig=1` — fires when q 3–200 chars; returns '' if AbstractText+Answer+RelatedTopics empty; via cachedJson + hashUrl 10-min sessionStorage cache.
 - WIKI OPENSEARCH `w/api.php?action=opensearch&search=&limit=3&origin=*` + 2× `api/rest_v1/page/summary/` parallel — fires when q ≥3, skip ^who is|^define (those route to WIKIDATA SPARQL/DICTIONARY); capped via applyWikiCaps WIKI OPENSEARCH ≤2.
-- OPENVERSE `api.openverse.org/v1/images/?q=&page_size=3` — fires when visual intent \b(image|photo|picture|logo|cover|artwork|painting|diagram|icon)\b or q ≥2 tokens; behind anonLimiter = createLimiter(15) + cachedJson 10-min TTL; attribution `— via Openverse` required; anon burst 20/min.
+- OPENVERSE `api.openverse.org/v1/images/?q=&page_size=3` — fires when visual intent \b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b or q ≥2 tokens; behind anonLimiter = createLimiter(15) (upstream anon burst 20/min) + cachedJson 10-min TTL; attribution `— via Openverse` required.
 - MWMBl `api.mwmbl.org/search/?s=&page_size=3` — fires when q ≥3; note param s not q (q → 422 per live probe); direct ACAO * 42KB; via cachedJson 10-min TTL.
 
 Heuristic miss is legal (return ''). TAG adds DDG IA, WIKI OPENSEARCH, OPENVERSE, MWMBl. Ranking keeps applyWikiCaps (now also WIKI OPENSEARCH ≤2) → smartSlice 12k.

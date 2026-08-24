@@ -542,6 +542,7 @@ export function createLimiter(perMinute) {
     // test helper: reset timing
     _reset(){ last=0; queue=Promise.resolve(); }
   };
+}
 // Module-scoped jina limiter — 20/min enforced across webSearch calls/turns
 export const jinaLimiter = createLimiter(20);
 // Anon limiter for OPENVERSE (15/min) — per research sketch only openverse uses it; ddgia/wiki/mwmbl use cachedJson alone
@@ -598,9 +599,8 @@ async function tvmazeSource(q, sig, transport) {
   }).join('');
 }
 
-// ── Path A general-web Sources (ADR 0009) — pure static, keyless CORS * ──
 async function ddgiaSource(q, sig, transport) {
-  if (!q || q.trim().length < 3 || q.length > 200) return '';
+  if (!q || q.trim().length < 3 || q.trim().length > 200) return '';
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&pretty=0&no_html=1&skip_disambig=1`;
   const j = await cachedJson(url, sig, transport);
   const absText = String(j?.AbstractText || '').trim();
@@ -631,10 +631,19 @@ async function wikiOpenSearchSource(q, sig, transport) {
   let out = ''; for (let i=0;i<Math.min(3,titles.length);i++) { const title=titles[i]; const url=urls[i]||`https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g,'_'))}`; const s=summaries[i]?.status==='fulfilled'?summaries[i].value:null; const extract=s?.extract?String(s.extract).slice(0,260):(Array.isArray(os?.[2])?String(os[2][i]||'').slice(0,220):''); out+=fmt('WIKI OPENSEARCH', `${title}${s?.type==='disambiguation'?' (disambiguation)':''}`, url, (extract||title).trim()); } return out;
 }
 async function openverseSource(q, sig, transport, limiter) {
+  if (!q || String(q).trim().length === 0) return '';
   const visualRe = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b/i;
-  if (!visualRe.test(q) && q.trim().split(/\s+/).length < 2) return '';
+  if (!visualRe.test(String(q)) && String(q).trim().split(/\s+/).length < 2) return '';
+  const url = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=3`;
+  const k = 'asm:' + hashUrl(url);
+  const hit = cacheGet(k);
+  if (hit !== null) {
+    const results = Array.isArray(hit?.results)?hit.results:[];
+    if(!results.length) return '';
+    return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
+  }
   if (limiter) await limiter.take();
-  const j = await cachedJson(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=3`, sig, transport);
+  const j = await cachedJson(url, sig, transport);
   const results = Array.isArray(j?.results)?j.results:[]; if(!results.length) return '';
   return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
 }
@@ -748,28 +757,15 @@ export function smartSlice(blocks, query, budget = 12000) {
 }
 
 export function applyWikiCaps(blocks) {
-  const markdown = Array.isArray(blocks) ? blocks.join('') : String(blocks || '');
+  const markdown = Array.isArray(blocks) ? blocks.join('') : String(blocks||'');
   if (!markdown) return '';
   const raw = markdown.split(/(?=### \[)/).filter(Boolean);
   const counts = { WIKIPEDIA:0, WIKIDATA:0, 'WIKIDATA SPARQL':0, 'WIKI OPENSEARCH':0 };
-  const out = [];
+  const out=[];
   for (const b of raw) {
-    const m = b.match(/^### \[([^\]]+)\]/);
-    const tag = m ? m[1] : '';
-    if (tag === 'WIKIPEDIA') {
-      if (counts.WIKIPEDIA >= 2) continue;
-      counts.WIKIPEDIA++;
-    } else if (tag === 'WIKIDATA') {
-      if (counts.WIKIDATA >= 2) continue;
-      counts.WIKIDATA++;
-    } else if (tag === 'WIKIDATA SPARQL') {
-      if (counts['WIKIDATA SPARQL'] >= 2) continue;
-      counts['WIKIDATA SPARQL']++;
-    } else if (tag === 'WIKI OPENSEARCH') {
-      if (counts['WIKI OPENSEARCH'] >= 2) continue;
-      counts['WIKI OPENSEARCH']++;
-    }
-    // DBPEDIA and others uncapped
+    const m=b.match(/^### \[([^\]]+)\]/);
+    const tag=m?m[1]:'';
+    if (tag in counts) { if(counts[tag]>=2) continue; counts[tag]++; }
     out.push(b);
   }
   return out.join('');
