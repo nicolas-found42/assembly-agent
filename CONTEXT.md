@@ -68,29 +68,84 @@ _Avoid_: score, grade, rating, level
 A single origin `webSearch` fans out to via `timed()` + `jfetch` + `fmt()` (e.g., `WIKIPEDIA`, `OPENALEX`). Each Source has a tag, a URL builder, and a `norm(url)` dedup key. All default Sources are keyless, CORS `*`, and work on the GH Pages deployment.
 _Avoid_: provider, endpoint, engine
 
+**ESPN**:
+A scoreboard Source at `site.api.espn.com/apis/site/v2/sports/{league}/scoreboard` that fires on league tokens (`nfl|nba|mlb|premier league|soccer`) and returns live/recent scores.
+_Avoid_: sports api, scoreboard provider
+
+**MLB**:
+A schedule Source at `statsapi.mlb.com/api/v1/schedule?sportId=1&date=YYYY-MM-DD` that fires on `mlb|baseball` tokens and returns today's games.
+_Avoid_: baseball api, mlb endpoint
+
+**COINGECKO**:
+A crypto price Source at `api.coingecko.com/api/v3/simple/price?ids=&vs_currencies=usd` that fires on coin names (`bitcoin|btc|ethereum|eth|…`).
+_Avoid_: crypto api, price provider
+
+**FRANKFURTER**:
+An FX rates Source at `api.frankfurter.dev/v1/latest?from=&to=` that fires on currency codes or names (`USD|EUR|JPY|…`).
+_Avoid_: forex api, fx provider
+
+**OPEN-METEO**:
+A weather Source via `geocoding-api.open-meteo.com/v1/search?name=&count=1` → `api.open-meteo.com/v1/forecast?current=temperature_2m,weather_code` that fires on `weather|temperature|forecast` or any place-bearing query; the shared memoized geocoder supplies `country_code` for World Bank.
+_Avoid_: weather api, forecast provider
+
+**WORLD BANK**:
+A demographics Source at `api.worldbank.org` (`/v2/country/{code}/indicator/...`) that fires on `gdp|population|economy` plus a country (via the same geocoder's `country_code`).
+_Avoid_: worldbank api, demographics provider
+
+**END OF LIFE**:
+An EOL Source at `endoflife.date/api/all.json` (~200 products, `{is_maintained,latest}`) that is always eligible, matches product tokens client-side, and returns at most the top 2 products.
+_Avoid_: eol api, lifecycle provider
+
+**CURRENT EVENTS**:
+A news-bulletin Source at `en.wikipedia.org/w/api.php?action=parse&page=Portal:Current_events&format=json&origin=*` that fires on news intent and parses `parse.text['*']` HTML `li` bulletins (Portal:Current_events).
+_Avoid_: wiki current events, news portal
+
+**WIKIDATA SPARQL**:
+A structured-entity Source at `query.wikidata.org/sparql?query=&format=json` that fires on `^who (is|leads)|current (president|prime minister|ceo|pope|king|monarch)` with a small hardcoded Q-id map (~20 offices/countries); queries are kept tiny for etiquette.
+_Avoid_: wikidata api, sparql provider
+
+**JINA WEB**:
+The general-web fallback Source via `r.jina.ai/https://lite.duckduckgo.com/lite/?q=` → markdown, always eligible behind a shared `createLimiter(20)` 20/min/IP token-bucket and 10-min `sessionStorage` URL-hash cache; attribution footer required.
+_Avoid_: jina proxy, web fallback
+
+**JINA NEWS**:
+A news RSS Source via `r.jina.ai/https://news.google.com/rss/search?q=&hl=en-US&gl=US&ceid=US:en` → markdown, behind the same 20/min limiter and cache with attribution.
+_Avoid_: news rss, google news provider
+
+**DICTIONARY**:
+A definition Source at `api.dictionaryapi.dev/api/v2/entries/en/<word>` that fires on `what does X mean|define X`.
+_Avoid_: dictionary api, define provider
+
+**TVMAZE**:
+A TV-show Source at `api.tvmaze.com/search/shows?q=` that fires on `tv show|series|episode`.
+_Avoid_: tv api, show provider
+
 **Candidate Source**:
 A Source evaluated in research harvest but not yet in the `webSearch` fan-out. Filtered by the Inclusion Checklist before it ships.
 _Avoid_: candidate, potential source
 
 **Inclusion Checklist**:
-The gates a Candidate Source must clear to ship: license OSI/CC0/ODbL, CORS `*` (or `origin=*`), keyless Auth=No, ToS allows anonymous client fan-out, live `curl -I` shows `access-control-allow-origin: *`, relevance High for code/tech/science, p50 <800ms and fits 8s `TIMEOUT`. Conditional `*` via Worker generic proxy is allowed only if free and GH Pages–compatible.
+The gates a Candidate Source must clear to ship: license OSI/CC0/ODbL, CORS `*` (or `origin=*`), keyless Auth=No, ToS allows anonymous client fan-out, live `curl -I` shows `access-control-allow-origin: *`, relevance High for code/tech/science, p50 <800ms and fits 8s `TIMEOUT`. Conditional `*` via Worker generic proxy is allowed only if free and GH Pages–compatible. Jina Reader sources are conditional: `r.jina.ai` provides `ACAO *` with attribution footer required and a hard 20 req/min/IP — shipped behind a client token-bucket limiter (`createLimiter(20)`) and 10-min `sessionStorage` cache.
 _Avoid_: criteria, filter
 
 **Fan-out**:
-The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each job is a `timed(name, fn, failures)` Source. Default is up to 13 keyless Sources; no key-gated Sources ship by default.
+The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each job is a `timed(name, fn, failures)` Source. Default is ~25 keyless Sources (12 code/science including upgraded STACK OVERFLOW + 13 general-purpose: ESPN, MLB, COINGECKO, FRANKFURTER, OPEN-METEO, WORLD BANK, END OF LIFE, CURRENT EVENTS, WIKIDATA SPARQL, JINA WEB, JINA NEWS, DICTIONARY, TVMAZE); no key-gated Sources ship by default.
 _Avoid_: batch, fanout
 
 **Ranking**:
-Ordering of deduped `fmt` blocks before the 12k `markdown.slice`. Grouped by Source weight (job order) — chat model does relevance ranking when it synthesizes the answer, not `webSearch` itself.
+Ordering of deduped `fmt` blocks before the 12k `markdown.slice`. Grouped by Source weight (job order), then `applyWikiCaps` (WIKIPEDIA ≤2 blocks, WIKIDATA ≤2 via header `^### \[TAG\]`, DBPEDIA uncapped), then `smartSlice` term-scored selection preserving original order up to budget — chat model does relevance ranking when it synthesizes the answer, not `webSearch` itself.
 _Avoid_: scoring, sorting, ordering
+**Hedge Pass**:
+The single forced tools-less rewrite inserted after a natural round-final when `hedgeNeeded(answer, evidence)` is true — the answer contains existence-denial phrasing (`there is no|does not exist|no such`) and Tool-result evidence is empty or lacks the denied subject. The Bridge re-invokes the model once with `HEDGE_PASS_NUDGE` (honest-uncertainty rewrite instruction, reusing `BUDGET_NUDGE` plumbing) and replaces the final text; at most one per Turn.
+_Avoid_: hedge retry, denial fix, second pass
 
 **Search Proxy**:
 Optional Worker route `GET /api/search?url=` (and `/api/arxiv?q=`) that forwards a CORS-blocked open source (e.g., arXiv Atom) through the same Worker that holds the Operator Key, adds `access-control-allow-origin: *`, and translates to JSON. Free, no key, only for sources that already pass the rest of the Inclusion Checklist.
 _Avoid_: cors proxy, gateway
+
 **Tool Card**:
 The collapsible per-Tool-Call panel (`js/main.js:339`) that shows one `web_search` run's grouped Source blocks and its completion status (`8 SOURCES · MISSED: …` or `FAILED: …`). One Tool Round with parallel calls shows N Tool Cards stacked in round order; older rounds auto-collapse.
 _Avoid_: tool bubble, search card
-
 
 **Touch Target**:
 The interactive hit area of a HUD, drawer, or composer control at 360–375px. Must be ≥24×24px (WCAG 2.2 2.5.8) and ideally 44×44pt (Apple HIG) with 8px spacing; in ASM Agent this covers `.hud-btn`, `.pill`, `.insp-tab`, and the brand toggle.

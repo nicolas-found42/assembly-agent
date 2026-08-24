@@ -4,7 +4,7 @@
 
 import { webSearch } from './search.js';
 import { saveActiveSession } from './sessions.js';
-
+import { hedgeNeeded, HEDGE_PASS_NUDGE, repairToolArgs } from './guard.js';
 /** @type {WebAssembly.Instance} */
 let inst = null;
 /** engine exports */ let E = null;
@@ -171,7 +171,7 @@ const WEB_SEARCH_TOOL = {
   type: 'function',
   function: {
     name: 'web_search',
-    description: 'Search the web for current information. Use for anything time-sensitive or factual.',
+    description: 'Search the web for current information. Use for anything time-sensitive or factual. If you already know a stable answer confidently, reply directly instead of calling web_search.',
     parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
   },
 };
@@ -181,8 +181,8 @@ function pendingToolCall() {
   const dv = new DataView(memBuf());
   const name = str(0x6040, dv.getInt32(0x34, true));
   const argsText = str(dv.getInt32(0x28, true), dv.getInt32(0x2C, true));
-  let query = '';
-  try { query = JSON.parse(argsText).query ?? ''; } catch {}
+  const repaired = repairToolArgs(argsText);
+  const query = repaired ? repaired.query : '';
   return { name, query };
 }
 
@@ -302,6 +302,7 @@ export async function runTurn(text, { key, model, on, persist, search } = {}) {
   const doSearch = search || webSearch;
   const useProxy = shouldUseProxy(key, model);
   const ropts = { key, model, useProxy };
+  let evidence = '';
   appendHistory(1, text);
   persist?.();
 
@@ -327,6 +328,20 @@ export async function runTurn(text, { key, model, on, persist, search } = {}) {
 
     if (E.tool_pending() !== 1) {
       const finalText = lastContent();
+      // once-per-turn Hedge Pass: denial without evidence -> tools-less rewrite via HEDGE_PASS_NUDGE
+      if (hedgeNeeded(finalText, evidence)) {
+        const hedgeRound = round + 1;
+        emit({ type: 'round-started', round: hedgeRound });
+        const msgs = [...buildMessages(), { role: 'user', content: HEDGE_PASS_NUDGE }];
+        const hStatus = await runRound(msgs, false, ropts, emit);
+        if (hStatus !== 'ok') return failSummary(hedgeRound);
+        const hedgeRaw = lastContent();
+        const hedgeText = hedgeRaw.trim() ? hedgeRaw : finalText;
+        emit({ type: 'round-final', text: hedgeText });
+        persist?.();
+        emit({ type: 'done' });
+        return { ok: true, rounds: hedgeRound + 1, text: hedgeText };
+      }
       emit({ type: 'round-final', text: finalText });
       persist?.();
       emit({ type: 'done' });
@@ -343,8 +358,8 @@ export async function runTurn(text, { key, model, on, persist, search } = {}) {
         const id = str(dv.getInt32(0, true), dv.getInt32(4, true));
         const name = str(dv.getInt32(8, true), dv.getInt32(12, true));
         const argsText = str(dv.getInt32(16, true), dv.getInt32(20, true));
-        let query = '';
-        try { query = JSON.parse(argsText).query ?? ''; } catch {}
+        const repaired = repairToolArgs(argsText);
+        const query = repaired ? repaired.query : '';
         calls.push({ id, name, query });
       }
       for (const c of calls) emit({ type: 'tool-started', name: c.name, query: c.query });
@@ -352,12 +367,14 @@ export async function runTurn(text, { key, model, on, persist, search } = {}) {
       for (let i = 0; i < calls.length; i++) {
         const c = calls[i];
         appendHistory(3, results[i].markdown, { tool_call_id: c.id, name: c.name });
+        evidence += (results[i].markdown || '') + '\n';
         emit({ type: 'tool-finished', name: c.name, query: c.query, result: results[i] });
       }
     } else {
       const { name, query } = pendingToolCall();
       emit({ type: 'tool-started', name, query });
       const result = await doSearch(query || 'webassembly');
+      evidence += (result.markdown || '') + '\n';
 
       const rb = new TextEncoder().encode(result.markdown);
       const S = E.scratch();
