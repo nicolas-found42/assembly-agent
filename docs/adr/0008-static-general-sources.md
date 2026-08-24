@@ -52,3 +52,10 @@ Techniques:
 - StackExchange anonymous quota 300/day/IP — `quota_remaining>50` guard and 3-result `pagesize` keep budget; exceed surfaces as `FAILED` but never blocks other Sources.
 - WDQS etiquette: small hardcoded Q-id map, tiny queries, `Accept: application/sparql-results+json`, cache; abuse risks 429.
 - No new Worker routes; arXiv/Reddit/CORS shims remain future candidates only if they clear the Checklist without Worker growth.
+
+## Refinements (2026-08-24)
+
+- **ESPN team-nickname routing** — the league-token heuristic extended with an MLB/NBA/NFL nickname table (`TEAM_LEAGUES`, word-boundary matched). Common-word nicknames (heat, magic, thunder) can fire ESPN on non-sports queries — accepted: sources are failure-tolerant and time-capped. Cross-league ambiguous nicknames (Giants, Cardinals) resolve by a co-mentioned unambiguous team's league, else a documented default (Giants→NFL, Cardinals→MLB).
+- **JINA NEWS recency triggers** — gate widened from `(news|headlines)` to `\b(news|headlines|right now|today|this week)\b` behind the unchanged 20/min limiter + cache.
+- **END OF LIFE weight boost** — `smartSlice` adds `EOL_BOOST` (+3) to END OF LIFE blocks when the query names a tracked product per `EOL_PRODUCT_LIST` (467-slug snapshot of `all.json`, 2026-08-24); source matching and boost share one predicate (`productHit`) so they stay aligned.
+- **all.json payload drift** — the API now returns bare slug strings; `endoflifeSource` normalizes both shapes. Legacy code read `p.product` off strings and its `t.includes('')` fallback matched every product on every query, emitting `undefined` blocks.

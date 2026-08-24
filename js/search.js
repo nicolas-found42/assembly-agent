@@ -5,19 +5,19 @@
 
 /*
 Heuristics — one block (ADR 0008):
-- espn:       /\b(nfl|nba|mlb|premier league|soccer league)\b/i  → ESPN scoreboard /apis/site/v2/sports/{league}/scoreboard
+- espn:       /\b(nfl|nba|mlb|premier league|soccer league)\b/i OR MLB/NBA/NFL team nickname (TEAM_LEAGUES map; ambiguous nicknames resolved by co-mention, else default) → ESPN scoreboard /apis/site/v2/sports/{league}/scoreboard
 - mlb:        /\b(mlb|baseball)\b/i                              → statsapi.mlb.com schedule (today)
 - coingecko:  /\b(bitcoin|btc|ethereum|eth|solana|sol|dogecoin|doge|cardano|ada|litecoin|ltc|ripple|xrp|polkadot|dot|chainlink|link)\b/i → coingecko simple/price
 - frankfurter:/\b(usd|eur|gbp|jpy|cad|aud|chf|cny|inr|brl|rub|krw|mxn|sek|nok|dkk|pln|try|nzd|sgd|hkd|zar|aed|thb|dollar|euro|yen|pound)\b/i (needs ≥2 distinct codes) → frankfurter latest
 - openmeteo:  /(weather|temperature|forecast)/i OR place-intent (extractPlace) → geocode (memoized per turn) → forecast; geocoder fires on ANY place-bearing query (for worldbank reuse)
 - worldbank:  /(gdp|population|economy)/i + country (country_code via SAME memoized geocode) → api.worldbank.org indicator NY.GDP.MKTP.CD / SP.POP.TOTL
-- endoflife:  always eligible; fetches endoflife.date/api/all.json then client-side product-token match (top 2)
+- endoflife:  always eligible; fetches endoflife.date/api/all.json then client-side product-token match (top 2); smartSlice boosts END OF LIFE blocks (+EOL_BOOST) when the query names a tracked product (EOL_PRODUCT_LIST catalog snapshot)
 - cep:        /(news|current events|headlines|breaking)/i → wikipedia Portal:Current_events parse
 - wdqs:       /^who (is|leads)|current (president|prime minister|ceo|pope|king|monarch)/i → small hardcoded Q-id map (~20) → query.wikidata.org/sparql (tiny LIMIT 3) — document limits
 - dictionary: /(what does .* mean|define\s+\w+)/i → dictionaryapi.dev entries
 - tvmaze:     /(tv show|series|episode|tv series)/i → api.tvmaze.com/search/shows
 - jinaweb:    ALWAYS eligible behind shared limiter (20/min) → r.jina.ai/https://lite.duckduckgo.com/lite/?q=… + attribution footer
-- jinanews:   /(news|headlines)/i behind same limiter → r.jina.ai/https://news.google.com/rss/search?q=…
+- jinanews:   /\b(news|headlines|right now|today|this week)\b/i behind same limiter → r.jina.ai/https://news.google.com/rss/search?q=…
 - StackExchange upgraded: withbody + sites [stackoverflow,cooking,diy,physics] parallel fan-out + quota_remaining>50 guard for answer-hop
 - Caps: applyWikiCaps limits WIKIPEDIA ≤2 and WIKIDATA* ≤2 blocks (header regex ^### \[TAG\]), DBPEDIA uncapped
 - Slice: smartSlice term-scored selection preserving original order, budget 12000
@@ -277,6 +277,60 @@ function extractPlace(q) {
 }
 
 // ── new sources ──
+// Team nickname → ESPN scoreboard league path. Two-path entries are cross-sport
+// ambiguities (Giants/Cardinals exist in both NFL and MLB): resolved by a
+// co-mentioned unambiguous team's league, else the first path (default). Matching
+// is word-boundary, so common-word nicknames (heat, magic, thunder…) can fire
+// ESPN on non-sports queries — accepted: sources are failure-tolerant, time-capped.
+const TEAM_LEAGUES = [
+  ['giants', ['football/nfl', 'baseball/mlb']],
+  ['cardinals', ['baseball/mlb', 'football/nfl']],
+  // NFL
+  ['falcons',['football/nfl']], ['ravens',['football/nfl']], ['bills',['football/nfl']], ['panthers',['football/nfl']],
+  ['bears',['football/nfl']], ['bengals',['football/nfl']], ['browns',['football/nfl']], ['cowboys',['football/nfl']],
+  ['broncos',['football/nfl']], ['lions',['football/nfl']], ['packers',['football/nfl']], ['texans',['football/nfl']],
+  ['colts',['football/nfl']], ['jaguars',['football/nfl']], ['chiefs',['football/nfl']], ['raiders',['football/nfl']],
+  ['chargers',['football/nfl']], ['rams',['football/nfl']], ['dolphins',['football/nfl']], ['vikings',['football/nfl']],
+  ['patriots',['football/nfl']], ['saints',['football/nfl']], ['jets',['football/nfl']], ['eagles',['football/nfl']],
+  ['steelers',['football/nfl']], ['49ers',['football/nfl']], ['niners',['football/nfl']], ['seahawks',['football/nfl']],
+  ['buccaneers',['football/nfl']], ['bucs',['football/nfl']], ['titans',['football/nfl']], ['commanders',['football/nfl']],
+  // NBA
+  ['hawks',['basketball/nba']], ['celtics',['basketball/nba']], ['nets',['basketball/nba']], ['hornets',['basketball/nba']],
+  ['bulls',['basketball/nba']], ['cavaliers',['basketball/nba']], ['cavs',['basketball/nba']], ['mavericks',['basketball/nba']],
+  ['mavs',['basketball/nba']], ['nuggets',['basketball/nba']], ['pistons',['basketball/nba']], ['warriors',['basketball/nba']],
+  ['rockets',['basketball/nba']], ['pacers',['basketball/nba']], ['clippers',['basketball/nba']], ['lakers',['basketball/nba']],
+  ['grizzlies',['basketball/nba']], ['heat',['basketball/nba']], ['bucks',['basketball/nba']], ['timberwolves',['basketball/nba']],
+  ['wolves',['basketball/nba']], ['pelicans',['basketball/nba']], ['knicks',['basketball/nba']], ['thunder',['basketball/nba']],
+  ['magic',['basketball/nba']], ['sixers',['basketball/nba']], ['76ers',['basketball/nba']], ['suns',['basketball/nba']],
+  ['blazers',['basketball/nba']], ['kings',['basketball/nba']], ['spurs',['basketball/nba']], ['raptors',['basketball/nba']],
+  ['jazz',['basketball/nba']], ['wizards',['basketball/nba']],
+  // MLB
+  ['orioles',['baseball/mlb']], ['red sox',['baseball/mlb']], ['yankees',['baseball/mlb']], ['guardians',['baseball/mlb']],
+  ['royals',['baseball/mlb']], ['tigers',['baseball/mlb']], ['twins',['baseball/mlb']], ['white sox',['baseball/mlb']],
+  ['astros',['baseball/mlb']], ['angels',['baseball/mlb']], ['mariners',['baseball/mlb']], ['rangers',['baseball/mlb']],
+  ['blue jays',['baseball/mlb']], ['braves',['baseball/mlb']], ['marlins',['baseball/mlb']], ['mets',['baseball/mlb']],
+  ['phillies',['baseball/mlb']], ['pirates',['baseball/mlb']], ['brewers',['baseball/mlb']], ['cubs',['baseball/mlb']],
+  ['reds',['baseball/mlb']], ['rockies',['baseball/mlb']], ['dodgers',['baseball/mlb']], ['padres',['baseball/mlb']],
+  ['nationals',['baseball/mlb']], ['nats',['baseball/mlb']], ['diamondbacks',['baseball/mlb']], ['dbacks',['baseball/mlb']],
+];
+const TEAM_LEAGUE_RES = TEAM_LEAGUES.map(([name, leagues]) => [new RegExp(`\\b${name}\\b`), leagues]);
+
+/** League for team-nickname queries: if every unambiguous nickname mentioned maps
+ *  to one league, use it; conflicting leagues → null (keyword heuristics decide);
+ *  only ambiguous nicknames → their default league. */
+function leagueFromTeams(lower) {
+  const definite = new Set();
+  let fallback = null;
+  for (const [re, leagues] of TEAM_LEAGUE_RES) {
+    if (!re.test(lower)) continue;
+    if (leagues.length === 1) definite.add(leagues[0]);
+    else fallback = leagues[0];
+  }
+  if (definite.size === 1) return [...definite][0];
+  if (definite.size > 1) return null;
+  return fallback;
+}
+
 async function espn(q, sig, transport) {
   const lower = q.toLowerCase();
   let leaguePath = null;
@@ -286,7 +340,8 @@ async function espn(q, sig, transport) {
   else if (/premier league/.test(lower)) leaguePath = 'soccer/eng.1';
   else if (/soccer league/.test(lower)) leaguePath = 'soccer/eng.1';
   else if (/\bsoccer\b/.test(lower)) leaguePath = 'soccer/eng.1';
-  else return '';
+  else leaguePath = leagueFromTeams(lower);
+  if (!leaguePath) return '';
   const u = `https://site.api.espn.com/apis/site/v2/sports/${leaguePath}/scoreboard`;
   const j = await jfetch(u, { signal: sig }, transport);
   const events = j?.events || j?.scoreboard?.events || [];
@@ -380,16 +435,23 @@ async function endoflifeSource(q, sig, transport) {
   const u = `https://endoflife.date/api/all.json`;
   const j = await jfetch(u, { signal: sig }, transport);
   if (!Array.isArray(j)) return '';
-  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const scored = [];
-  for (const p of j) {
+  // 2026-08 payload drift: all.json now returns bare slug strings; the older
+  // object shape ({product,is_maintained,latest}) is normalized so both work.
+  const entries = j.map((p)=> typeof p === 'string' ? { product: p } : p);
+  const tokens = tokenize(q);
+  const top = entries.filter((p)=> {
     const prod = String(p.product || '').toLowerCase();
-    const hit = terms.some((t)=> prod.includes(t) || t.includes(prod));
-    if (hit) scored.push(p);
-  }
-  const top = scored.slice(0,2);
+    return prod && productHit(tokens, prod);
+  }).slice(0,2);
   if (!top.length) return '';
-  return top.map((p)=> fmt('END OF LIFE', p.product, `https://endoflife.date/${p.product}`, `${p.is_maintained ? 'maintained' : 'eol'} · latest ${p.latest?.version || ''} (${p.latest?.date || ''})`.trim())).join('');
+  return top.map((p)=>{
+    const prod = String(p.product || '');
+    const bits = [];
+    if (p.is_maintained != null) bits.push(p.is_maintained ? 'maintained' : 'eol');
+    if (p.latest?.version) bits.push(`latest ${p.latest.version}${p.latest?.date ? ` (${p.latest.date})` : ''}`);
+    if (!bits.length) bits.push('tracked product');
+    return fmt('END OF LIFE', prod, `https://endoflife.date/${prod}`, bits.join(' · '));
+  }).join('');
 }
 
 async function cepSource(q, sig, transport) {
@@ -503,7 +565,7 @@ async function jinawebSource(q, sig, transport, limiter) {
   return jinaHelper(q, 'JINA WEB', target, sig, transport, limiter ?? jinaLimiter);
 }
 async function jinanewsSource(q, sig, transport, limiter) {
-  if (!/(news|headlines)/i.test(q)) return '';
+  if (!/\b(news|headlines|right now|today|this week)\b/i.test(q)) return '';
   const target = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
   return jinaHelper(q, 'JINA NEWS', target, sig, transport, limiter ?? jinaLimiter);
 }
@@ -536,16 +598,87 @@ async function tvmazeSource(q, sig, transport) {
 }
 
 // ── smartSlice + caps — exported ──
+// Tracked-product catalog snapshot from https://endoflife.date/api/all.json
+// (2026-08-24, 467 slugs). Drives the smartSlice END OF LIFE weight boost;
+// endoflifeSource itself still matches against the live payload.
+const EOL_PRODUCT_LIST = [
+  "adonisjs", "akeneo-pim", "alibaba-ack", "alibaba-dragonwell", "almalinux", "alpine-linux", "amazon-aurora-mysql", "amazon-aurora-postgresql", "amazon-cdk", "amazon-corretto",
+  "amazon-documentdb", "amazon-eks", "amazon-elasticache-redis", "amazon-glue", "amazon-linux", "amazon-mq-activemq", "amazon-mq-rabbitmq", "amazon-msk", "amazon-neptune", "amazon-opensearch",
+  "amazon-rds-mariadb", "amazon-rds-mysql", "amazon-rds-postgresql", "android", "angular", "angularjs", "ansible", "ansible-core", "ant", "antix",
+  "apache-activemq", "apache-airflow", "apache-apisix", "apache-artemis", "apache-camel", "apache-cassandra", "apache-celeborn", "apache-couchdb", "apache-flink", "apache-groovy",
+  "apache-hadoop", "apache-hop", "apache-http-server", "apache-kafka", "apache-lucene", "apache-maven", "apache-nifi", "apache-pulsar", "apache-spark", "apache-struts",
+  "apache-subversion", "api-platform", "apple-watch", "arangodb", "argo-cd", "argo-workflows", "artifactory", "authentik", "aws-lambda", "azul-zulu",
+  "azure-database-for-mysql", "azure-database-for-postgresql", "azure-devops-server", "azure-kubernetes-service", "backdrop", "bamboo", "bazel", "beats", "behat", "bellsoft-liberica",
+  "big-ip", "bigbluebutton", "bitbucket", "bitcoin-core", "blender", "bootstrap", "boundary", "bun", "cachet", "caddy",
+  "cakephp", "calico", "centos", "centos-stream", "centreon", "cert-manager", "cfengine", "checkmk", "chef-infra-client", "chef-infra-server",
+  "chef-inspec", "chef-supermarket", "chef-workstation", "chrome", "cilium", "cisco-ios-xe", "citrix-vad", "ckeditor", "clamav", "claude",
+  "clear-linux", "clickhouse", "cloud-sql-auth-proxy", "cnspec", "cockroachdb", "coder", "coldfusion", "commvault", "composer", "concrete-cms",
+  "confluence", "consul", "containerd", "contao", "contour", "controlm", "cortex-xdr", "cos", "couchbase-server", "craft-cms",
+  "dbt-core", "dce", "debian", "deno", "dependency-track", "devuan", "discourse", "django", "docker-engine", "dotnet",
+  "dotnetfx", "dovecot", "dropwizard", "drupal", "drush", "duckdb", "eclipse-jetty", "eclipse-temurin", "elasticsearch", "electron",
+  "elixir", "emberjs", "envoy", "erlang", "eslint", "esxi", "etcd", "eurolinux", "exim", "express",
+  "fairphone", "fedora", "ffmpeg", "filemaker", "firefox", "fluent-bit", "flux", "font-awesome", "foreman", "forgejo",
+  "fortios", "freebsd", "freedesktop-sdk", "gatekeeper", "gerrit", "ghc", "github-actions-runner-images", "gitlab", "gitlab-runner", "gleam",
+  "go", "goaccess", "godot", "google-kubernetes-engine", "google-nexus", "gorilla", "graalvm-ce", "gradle", "grafana", "grafana-loki",
+  "grails", "graylog", "greenlight", "grumphp", "grunt", "gstreamer", "guzzle", "haproxy", "haproxy-ingress", "harbor",
+  "hashicorp-packer", "hashicorp-vault", "hbase", "hibernate-orm", "horizon", "ibm-aix", "ibm-db2", "ibm-i", "ibm-mq", "ibm-semeru-runtime",
+  "icinga", "icinga-web", "idl", "influxdb", "intel-processors", "internet-explorer", "ionic", "ios", "ipad", "ipados",
+  "iphone", "isc-dhcp", "istio", "jaeger", "jekyll", "jenkins", "jhipster", "jira-software", "joomla", "jquery",
+  "jquery-ui", "jreleaser", "jruby", "julia", "karpenter", "kde-plasma", "keda", "keycloak", "kibana", "kindle",
+  "kirby", "knative", "kong-gateway", "kotlin", "kubernetes", "kubernetes-csi-node-driver-registrar", "kubernetes-node-feature-discovery", "kuma", "kyverno", "laravel",
+  "ldap-account-manager", "libreoffice", "lineageos", "linux", "linuxmint", "liquibase", "log4j", "logstash", "longhorn", "looker",
+  "lua", "macos", "mageia", "magento", "mandrel", "mariadb", "mastodon", "matomo", "mattermost", "mautic",
+  "mediawiki", "meilisearch", "memcached", "metallb", "micronaut", "microsoft-build-of-openjdk", "mongodb", "moodle", "motorola-mobility", "msexchange",
+  "mssqlserver", "mulesoft-runtime", "mxlinux", "mysql", "neo4j", "neos", "netapp-ontap", "netbackup-appliance-os", "netbsd", "nextcloud",
+  "nextjs", "nexus", "nginx", "nix", "nixos", "nodejs", "nokia", "nomad", "notepad-plus-plus", "numpy",
+  "nutanix-aos", "nutanix-files", "nutanix-prism", "nuxt", "nvidia", "nvidia-gpu", "nvm", "office", "oneplus", "oniguruma",
+  "openbao", "openbsd", "openjdk-builds-from-oracle", "opensearch", "openssl", "opensuse", "opentofu", "openvpn", "openwrt", "openzfs",
+  "opnsense", "oracle-apex", "oracle-database", "oracle-graalvm", "oracle-jdk", "oracle-linux", "oracle-solaris", "otobo", "ovirt", "pangp",
+  "panos", "pci-dss", "perl", "phoenix-framework", "photon", "php", "phpbb", "phpmyadmin", "pigeonhole", "pixel",
+  "pixel-watch", "plesk", "plone", "pnpm", "podman", "pop-os", "postfix", "postgresql", "postmarketos", "powershell",
+  "privatebin", "proftpd", "prometheus", "protractor", "proxmox-backup-server", "proxmox-datacenter-manager", "proxmox-mail-gateway", "proxmox-ve", "puppet", "python",
+  "qt", "quarkus-framework", "quasar", "rabbitmq", "rails", "rancher", "raspberry-pi", "react", "react-native", "red-hat-ansible-automation-platform",
+  "red-hat-openshift", "redhat-build-of-openjdk", "redhat-jboss-eap", "redhat-satellite", "redis", "redmine", "renovate", "rhel", "robo", "rocket-chat",
+  "rocky-linux", "ros", "ros-2", "roundcube", "routeros", "rtpengine", "ruby", "rust", "salt", "samsung-galaxy-tab",
+  "samsung-galaxy-watch", "samsung-mobile", "sapmachine", "scala", "sharepoint", "shopware", "silverstripe", "slackware", "sles", "sns-firmware",
+  "sns-hardware", "sns-smc", "solr", "sonarqube-community", "sonarqube-server", "sony-xperia", "sourcegraph", "splunk", "spring-boot", "spring-cloud",
+  "spring-framework", "spring-security", "sqlite", "squid", "statamic", "steamos", "strapi", "surface", "suse-linux-micro", "suse-manager",
+  "svelte", "symfony", "tails", "tailwind-css", "tarantool", "tarteaucitron", "telegraf", "teleport", "terraform", "thumbor",
+  "tls", "tomcat", "traefik", "truenas", "tvos", "twig", "typo3", "ubuntu", "umbraco", "unity",
+  "unrealircd", "valkey", "vcenter", "veeam-backup-and-replication", "veeam-backup-for-microsoft-365", "veeam-one", "vinyl-cache", "virtualbox", "visionos", "visual-cobol",
+  "visual-studio", "vitess", "vmware-cloud-foundation", "vmware-harbor-registry", "vmware-srm", "vue", "vuetify", "wagtail", "watchos", "weakforced",
+  "weechat", "windows", "windows-embedded", "windows-nano-server", "windows-powershell", "windows-server", "windows-server-core", "wireshark", "wordpress", "xcp-ng",
+  "yarn", "yocto", "youtrack", "zabbix", "zentyal", "zerto", "zookeeper",
+];
+// Weight bonus for END OF LIFE blocks when the query names a tracked product.
+const EOL_BOOST = 3;
+/** Lowercase word-ish tokens: letters/digits, with . _ + - kept inside tokens. */
+function tokenize(q) {
+  return String(q || '').toLowerCase().split(/[^a-z0-9._+-]+/).filter(Boolean);
+}
+/** Token/slug match: exact, or a ≥4-char overlap either way. Shared by
+ *  endoflifeSource's client-side match and the smartSlice boost so they stay aligned. */
+function productHit(tokens, slug) {
+  return tokens.some((t)=> t === slug || (t.length >= 4 && slug.length >= 4 && (slug.includes(t) || t.includes(slug))));
+}
+/** True when any query token matches a tracked slug per productHit. */
+function namesTrackedProduct(q) {
+  const tokens = tokenize(q);
+  return EOL_PRODUCT_LIST.some((s)=> productHit(tokens, s));
+}
+
 export function smartSlice(blocks, query, budget = 12000) {
   const markdown = Array.isArray(blocks) ? blocks.join('') : String(blocks || '');
   if (!markdown) return '';
   if (markdown.length <= budget) return markdown;
   const rawBlocks = markdown.split(/(?=### \[)/).filter(Boolean);
   const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const eolBoost = namesTrackedProduct(String(query || '')) ? EOL_BOOST : 0;
   const scored = rawBlocks.map((b,i)=>{
     const lower = b.toLowerCase();
     let score = 0;
     for (const t of terms) if (lower.includes(t)) score++;
+    if (eolBoost && /^### \[END OF LIFE\]/.test(b)) score += eolBoost;
     // small length penalty to prefer concise hits when tied
     return { b, i, score, len: b.length };
   });

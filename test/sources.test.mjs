@@ -319,6 +319,20 @@ function reset(){ clearCache(); if (jinaLimiter && jinaLimiter._reset) jinaLimit
   const r = await webSearch('nodejs', {transport});
   assert.ok(r.failures.includes('endoflife'), 'endoflife network error tolerated');
 }
+{
+  // 2026-08 payload drift: all.json now returns bare slug strings — must still
+  // match tokens and emit real product blocks (never 'undefined')
+  reset();
+  const transport = makeFake({
+    'endoflife.date/api/all.json': ['nodejs','python','ruby'],
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  });
+  const r = await webSearch('nodejs eol status', {transport});
+  assert.ok(r.markdown.includes('### [END OF LIFE] nodejs'), 'string payload matches nodejs slug');
+  assert.ok(r.markdown.includes('https://endoflife.date/nodejs'), 'string payload links product page');
+  assert.ok(!r.markdown.includes('undefined'), 'no undefined leak from string entries');
+}
+
 
 // jinaweb under limiter happy (always eligible behind limiter)
 {
@@ -398,6 +412,89 @@ function reset(){ clearCache(); if (jinaLimiter && jinaLimiter._reset) jinaLimit
   assert.ok(r.failures.includes('wdqs'), 'wdqs network error tolerated');
   assert.ok(!r.markdown.includes('### [WIKIDATA SPARQL]'), 'wdqs error yields no block without throwing');
 }
+
+// ── smartSlice END OF LIFE product boost ──
+{
+  // Over-budget mix: filler blocks out-score the END OF LIFE block on plain term
+  // matching. When the query names a tracked product, the EOL block must survive.
+  const eol = fmt('END OF LIFE','Python','https://endoflife.date/python','eol · latest 3.13');
+  const filler = Array.from({length:40},(_,i)=>fmt('WIKIPEDIA',`F${i}`,`https://f${i}.example/x`,`status update ${i}`)).join('');
+  // python (tracked) -> boost keeps EOL despite lower base score (1 vs 2)
+  const boosted = smartSlice(eol + filler, 'nodejs status update python', 1800);
+  assert.ok(boosted.includes('endoflife.date/python'), 'EOL block boosted when query names tracked product');
+  assert.ok(boosted.includes('f7.example'), 'sanity: filler still selected');
+  // same blocks, no tracked product in query -> plain scoring drops EOL
+  const plain = smartSlice(eol + filler, 'status update qwertyuiop', 1800);
+  assert.ok(!plain.includes('endoflife.date'), 'no boost without tracked product');
+}
+console.log('smartSlice EOL boost PASS');
+
+// ── jinanews recency triggers ──
+{
+  reset();
+  const transport = makeFake({
+    'r.jina.ai/https://news.google.com': 'Top headline: something big happened\n— via Jina Reader',
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  });
+  const r1 = await webSearch('what happened right now', {transport});
+  assert.ok(r1.markdown.includes('### [JINA NEWS]'), '"right now" fires JINA NEWS');
+  reset();
+  const r2 = await webSearch('tech headlines this week', {transport});
+  assert.ok(r2.markdown.includes('### [JINA NEWS]'), '"this week" fires JINA NEWS');
+  reset();
+  const r3 = await webSearch('scores today', {transport});
+  assert.ok(r3.markdown.includes('### [JINA NEWS]'), '"today" fires JINA NEWS');
+}
+{
+  reset();
+  let newsCalled=false;
+  const transport = async (url)=>{ if (url.includes('news.google.com')) newsCalled=true; return { ok:true, status:200, json: async()=>({}), text: async()=>'' }; };
+  await webSearch('hello world', {transport});
+  assert.equal(newsCalled,false,'neutral query does not fetch Google News RSS');
+}
+console.log('jinanews triggers PASS');
+
+// ── espn team-name league map ──
+{
+  reset();
+  const counts={};
+  const transport = makeFake({
+    'site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard': { events:[{ id:'g1', name:'NYY @ BOS', competitions:[{ competitors:[{team:{abbreviation:'NYY'},score:'4'},{team:{abbreviation:'BOS'},score:'2'}]}]}]},
+    'site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard': { events:[{ id:'g2', name:'LAL @ BOS', competitions:[{ competitors:[{team:{abbreviation:'LAL'},score:'101'},{team:{abbreviation:'BOS'},score:'99'}]}]}]},
+    'site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard': { events:[{ id:'g3', name:'NYG @ DAL', competitions:[{ competitors:[{team:{abbreviation:'NYG'},score:'21'},{team:{abbreviation:'DAL'},score:'24'}]}]}]},
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  }, counts);
+  const r1 = await webSearch('yankees score', {transport});
+  assert.ok(r1.markdown.includes('### [ESPN]'), 'team nickname reaches ESPN');
+  assert.equal(counts['site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard'],1,'yankees routes to MLB scoreboard');
+  reset();
+  const counts2={};
+  const transport2 = makeFake({
+    'site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard': { events:[] },
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  }, counts2);
+  // ambiguous "giants" resolved by co-mentioned unambiguous dodgers -> MLB
+  const r2 = await webSearch('giants vs dodgers score', {transport: transport2});
+  assert.equal(counts2['site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard'],1,'ambiguous team resolved by co-mention');
+  reset();
+  const counts3={};
+  const transport3 = makeFake({
+    'site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard': { events:[] },
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  }, counts3);
+  // bare ambiguous "giants" falls back to documented default (NFL)
+  const r3 = await webSearch('giants score', {transport: transport3});
+  assert.equal(counts3['site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'],1,'bare ambiguous team uses default league');
+  reset();
+  const counts4={};
+  const transport4 = makeFake({
+    'site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard': { events:[] },
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  }, counts4);
+  const r4 = await webSearch('lakers game tonight', {transport: transport4});
+  assert.equal(counts4['site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'],1,'nba nickname routes to NBA scoreboard');
+}
+console.log('espn team map PASS');
 
 // webSearch shape unchanged for old callers
 {

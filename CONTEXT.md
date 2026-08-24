@@ -69,7 +69,7 @@ A single origin `webSearch` fans out to via `timed()` + `jfetch` + `fmt()` (e.g.
 _Avoid_: provider, endpoint, engine
 
 **ESPN**:
-A scoreboard Source at `site.api.espn.com/apis/site/v2/sports/{league}/scoreboard` that fires on league tokens (`nfl|nba|mlb|premier league|soccer`) and returns live/recent scores.
+A scoreboard Source at `site.api.espn.com/apis/site/v2/sports/{league}/scoreboard` that fires on league tokens (`nfl|nba|mlb|premier league|soccer`) or any MLB/NBA/NFL team nickname (`TEAM_LEAGUES` map; cross-league ambiguous nicknames like Giants/Cardinals resolve by a co-mentioned unambiguous teammate's league, else a documented default) and returns live/recent scores.
 _Avoid_: sports api, scoreboard provider
 
 **MLB**:
@@ -93,7 +93,7 @@ A demographics Source at `api.worldbank.org` (`/v2/country/{code}/indicator/...`
 _Avoid_: worldbank api, demographics provider
 
 **END OF LIFE**:
-An EOL Source at `endoflife.date/api/all.json` (~200 products, `{is_maintained,latest}`) that is always eligible, matches product tokens client-side, and returns at most the top 2 products.
+An EOL Source at `endoflife.date/api/all.json` (bare slug strings since 2026-08; older `{product,is_maintained,latest}` objects still handled) that is always eligible, matches query tokens against product slugs client-side (`productHit`, top 2), and whose blocks get a `smartSlice` weight boost when the query names a tracked product (`EOL_PRODUCT_LIST` catalog snapshot).
 _Avoid_: eol api, lifecycle provider
 
 **CURRENT EVENTS**:
@@ -109,7 +109,7 @@ The general-web fallback Source via `r.jina.ai/https://lite.duckduckgo.com/lite/
 _Avoid_: jina proxy, web fallback
 
 **JINA NEWS**:
-A news RSS Source via `r.jina.ai/https://news.google.com/rss/search?q=&hl=en-US&gl=US&ceid=US:en` → markdown, behind the same 20/min limiter and cache with attribution.
+A news RSS Source via `r.jina.ai/https://news.google.com/rss/search?q=&hl=en-US&gl=US&ceid=US:en` → markdown, fires on `\b(news|headlines|right now|today|this week)\b`, behind the same 20/min limiter and cache with attribution.
 _Avoid_: news rss, google news provider
 
 **DICTIONARY**:
@@ -133,7 +133,7 @@ The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each 
 _Avoid_: batch, fanout
 
 **Ranking**:
-Ordering of deduped `fmt` blocks before the 12k `markdown.slice`. Grouped by Source weight (job order), then `applyWikiCaps` (WIKIPEDIA ≤2 blocks, WIKIDATA ≤2 via header `^### \[TAG\]`, DBPEDIA uncapped), then `smartSlice` term-scored selection preserving original order up to budget — chat model does relevance ranking when it synthesizes the answer, not `webSearch` itself.
+Ordering of deduped `fmt` blocks before the 12k `markdown.slice`. Grouped by Source weight (job order), then `applyWikiCaps` (WIKIPEDIA ≤2 blocks, WIKIDATA ≤2 via header `^### \[TAG\]`, DBPEDIA uncapped), then `smartSlice` term-scored selection preserving original order up to budget (END OF LIFE blocks gain `EOL_BOOST` when the query names a tracked product) — chat model does relevance ranking when it synthesizes the answer, not `webSearch` itself.
 _Avoid_: scoring, sorting, ordering
 **Hedge Pass**:
 The single forced tools-less rewrite inserted after a natural round-final when `hedgeNeeded(answer, evidence)` is true — the answer contains existence-denial phrasing (`there is no|does not exist|no such`) and Tool-result evidence is empty or lacks the denied subject. The Bridge re-invokes the model once with `HEDGE_PASS_NUDGE` (honest-uncertainty rewrite instruction, reusing `BUDGET_NUDGE` plumbing) and replaces the final text; at most one per Turn.
