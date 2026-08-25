@@ -145,6 +145,7 @@ console.log('createLimiter PASS');
   assert.ok(SOURCE_NAMES.includes('openmeteo'), 'has openmeteo');
   assert.ok(SOURCE_NAMES.includes('worldbank'), 'has worldbank');
   assert.ok(SOURCE_NAMES.includes('stackexchange'), 'stackexchange stays');
+  assert.ok(!SOURCE_NAMES.includes('semanticscholar'), 'semanticscholar removed');
 }
 
 // ── per-source via fake transport ──
@@ -754,10 +755,42 @@ console.log('openverse limiter/cache PASS');
 }
 console.log('applyWikiCaps WIKI OPENSEARCH PASS');
 
-// ── 29-job Fan-out integration ──
+// ── OPEN LIBRARY book-intent gate + tolerance ──
+{
+  // happy: fires on a catalog-noun token
+  reset();
+  const fake = makeFake({
+    'openlibrary.org/search.json': { docs: [{ key: '/works/OL1', title: 'Dune', author_name: ['Frank Herbert'], first_publish_year: 1965 }] },
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  });
+  const r = await webSearch('best science fiction books', { transport: fake });
+  assert.ok(r.markdown.includes('### [OPEN LIBRARY]'), 'ol happy block');
+  assert.ok(r.markdown.includes('Dune'), 'ol happy title');
+
+  // gated skip: no book-intent token -> no fetch, not a failure
+  reset();
+  const counts = {};
+  const fake2 = makeFake({ 'openlibrary.org/search.json': { docs: [] } }, counts);
+  const r2 = await webSearch('gdp of france', { transport: fake2 });
+  assert.ok(!r2.markdown.includes('### [OPEN LIBRARY]'), 'ol gated skip no block');
+  assert.equal(counts['openlibrary.org/search.json'] || 0, 0, 'ol gated skip no fetch');
+  assert.ok(!r2.failures.includes('openlibrary'), 'ol gated skip not in failures');
+
+  // upstream error degrades tolerantly into failures[]
+  reset();
+  const fake3 = makeFake({
+    'openlibrary.org/search.json': { __error: true, msg: '500' },
+    'r.jina.ai/https://lite.duckduckgo.com': 'jina ok'
+  });
+  const r3 = await webSearch('novels by frank herbert', { transport: fake3 });
+  assert.ok(!r3.markdown.includes('### [OPEN LIBRARY]'), 'ol error no block');
+  assert.ok(r3.failures.includes('openlibrary'), 'ol failure recorded');
+}
+
+// ── 28-job Fan-out integration ──
 {
   reset();
-  assert.equal(SOURCE_NAMES.length, 29, 'SOURCE_NAMES length 29');
+  assert.equal(SOURCE_NAMES.length, 28, 'SOURCE_NAMES length 28');
   assert.ok(SOURCE_NAMES.includes('ddgia'), 'SOURCE_NAMES includes ddgia');
   assert.ok(SOURCE_NAMES.includes('wiki_os'), 'SOURCE_NAMES includes wiki_os');
   assert.ok(SOURCE_NAMES.includes('openverse'), 'SOURCE_NAMES includes openverse');
@@ -811,7 +844,7 @@ console.log('applyWikiCaps WIKI OPENSEARCH PASS');
   assert.ok(r3.failures.includes('ddgia'), 'fan-out ddgia failure recorded not thrown');
   assert.ok(r3.markdown.includes('### [WIKI OPENSEARCH]') && r3.markdown.includes('### [OPENVERSE]'), 'other sources still present after one failure');
 }
-console.log('29-job fan-out PASS');
+console.log('28-job fan-out PASS');
 
 console.log('ALL SOURCES PASS');
-console.log('PATH A 29 PASS');
+console.log('PATH A 28 PASS');
