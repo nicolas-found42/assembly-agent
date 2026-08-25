@@ -168,7 +168,7 @@ async function github(q, sig, transport) {
     fmt('GITHUB', r.full_name, r.html_url, `★ ${r.stargazers_count} — ${r.description || ''}`)).join('');
 }
 
-// ── 9 P0 keyless Sources (ADR 0004) ──
+// ── 7 P0 keyless Sources (ADR 0004) ──
 
 async function wikidata(q, sig, transport) {
   const u = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(q)}&language=en&format=json&limit=3&origin=*`;
@@ -205,14 +205,6 @@ async function crossref(q, sig, transport) {
   }).join('');
 }
 
-async function semanticscholar(q, sig, transport) {
-  const u = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(q)}&limit=3&fields=title,abstract,url,citationCount,year,authors`;
-  const j = await jfetch(u, { signal: sig }, transport);
-  const data = j?.data || j?.papers || [];
-  return (data).map((p) =>
-    fmt('SEMANTIC SCHOLAR', p.title || '', p.url || '', `${(p.authors || []).slice(0, 2).map((a) => a.name).join(', ')}${p.year ? ` · ${p.year}` : ''}${p.citationCount ? ` · cited ${p.citationCount}` : ''} — ${stripTags(p.abstract || '').slice(0, 180)}`.trim())).join('');
-}
-
 async function doaj(q, sig, transport) {
   const u = `https://doaj.org/api/v4/search/articles/${encodeURIComponent(q)}?pageSize=3`;
   const j = await jfetch(u, { signal: sig }, transport);
@@ -229,6 +221,10 @@ async function doaj(q, sig, transport) {
 }
 
 async function openlibrary(q, sig, transport) {
+  // Book-intent gate: fires only on catalog-noun tokens (DICTIONARY/TVMAZE pattern);
+  // travel-verb "book a flight" is an accepted benign false positive.
+  const bookRe = /\b(books?|textbooks?|novels?|authors?|writers?|isbn|paperbacks?|hardcovers?|audiobooks?|literature|fiction|memoir|poetry|bestsellers?)\b/i;
+  if (!bookRe.test(String(q))) return '';
   const u = `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=3&fields=key,title,author_name,first_publish_year,cover_edition_key`;
   const j = await jfetch(u, { signal: sig }, transport);
   return (j?.docs || []).map((d) =>
@@ -784,7 +780,6 @@ const TAG = {
   wikidata: 'WIKIDATA',
   openalex: 'OPENALEX',
   crossref: 'CROSSREF',
-  semanticscholar: 'SEMANTIC SCHOLAR',
   doaj: 'DOAJ',
   openlibrary: 'OPEN LIBRARY',
   dbpedia: 'DBPEDIA',
@@ -849,7 +844,6 @@ export async function webSearch(query, { transport = fetch } = {}) {
     withMs('wikidata', (sig) => wikidata(query, sig, transport)),
     withMs('openalex', (sig) => openalex(query, sig, transport)),
     withMs('crossref', (sig) => crossref(query, sig, transport)),
-    withMs('semanticscholar', (sig) => semanticscholar(query, sig, transport)),
     withMs('doaj', (sig) => doaj(query, sig, transport)),
     withMs('openlibrary', (sig) => openlibrary(query, sig, transport)),
     withMs('dbpedia', (sig) => dbpedia(query, sig, transport)),

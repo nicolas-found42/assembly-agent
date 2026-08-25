@@ -116,6 +116,10 @@ _Avoid_: news rss, google news provider
 A definition Source at `api.dictionaryapi.dev/api/v2/entries/en/<word>` that fires on `what does X mean|define X`.
 _Avoid_: dictionary api, define provider
 
+**OPEN LIBRARY**:
+A books Source at `openlibrary.org/search.json?q=&limit=3` that fires on book-intent tokens (`book(s)|textbook|novel(s)|author(s)|writer(s)|isbn|paperback(s)|hardcover(s)|audiobook(s)|literature|fiction|memoir|poetry|bestseller(s)`).
+_Avoid_: open library api, book provider
+
 **TVMAZE**:
 A TV-show Source at `api.tvmaze.com/search/shows?q=` that fires on `tv show|series|episode`.
 _Avoid_: tv api, show provider
@@ -145,7 +149,7 @@ The gates a Candidate Source must clear to ship: license OSI/CC0/ODbL, CORS `*` 
 _Avoid_: criteria, filter
 
 **Fan-out**:
-The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each job is a `timed(name, fn, failures)` Source. Default is 29 keyless Sources (12 code/science including upgraded STACK OVERFLOW + 13 general-purpose: ESPN, MLB, COINGECKO, FRANKFURTER, OPEN-METEO, WORLD BANK, END OF LIFE, CURRENT EVENTS, WIKIDATA SPARQL, JINA WEB, JINA NEWS, DICTIONARY, TVMAZE + 4 general-web: DDG IA, WIKI OPENSEARCH, OPENVERSE, MWMBl); no key-gated Sources ship by default.
+The parallel `Promise.allSettled(jobs)` batch inside one `webSearch` call. Each job is a `timed(name, fn, failures)` Source. Default is 28 keyless Sources (11 code/science including upgraded STACK OVERFLOW + 13 general-purpose: ESPN, MLB, COINGECKO, FRANKFURTER, OPEN-METEO, WORLD BANK, END OF LIFE, CURRENT EVENTS, WIKIDATA SPARQL, JINA WEB, JINA NEWS, DICTIONARY, TVMAZE + 4 general-web: DDG IA, WIKI OPENSEARCH, OPENVERSE, MWMBl); no key-gated Sources ship by default.
 _Avoid_: batch, fanout
 
 **Ranking**:
