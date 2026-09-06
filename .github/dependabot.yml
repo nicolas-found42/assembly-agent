@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Only dependency surface in this repo: pinned GitHub Actions.
+  # `cron` interval runs every day; `daily` would skip weekends.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 * * *"
+      timezone: "America/New_York"
