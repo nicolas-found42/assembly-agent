@@ -1,10 +1,12 @@
-// test/a11y.mjs — static a11y harness for D3 done-bar + awesome-lists triage.
-// Verifies WCAG 2.2 AA done-bar (six clauses) without needing a live browser.
-// For axe-level verification, run with puppeteer + axe-core CDN in CI; this harness
-// validates that the required DOM/JS/CSS contracts that make axe pass are present.
+// test/a11y.mjs — static a11y harness for the Command Line UI + awesome-lists triage.
+// Verifies the WCAG 2.2 AA done-bar (six clauses, ADR 0006) without needing a live browser.
+// The production UI is the "variant B" Command Line terminal: the static #b-shell /
+// #b-transcript / .b-dock surface in index.html, plus native <dialog> modals created at
+// boot by js/main.js. For axe-level verification, run with puppeteer + axe-core CDN in CI;
+// this harness validates that the required DOM/JS/CSS contracts that make axe pass are present.
 // Also emits awesome-lists triage verdicts per docs/research/*.md.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -20,58 +22,66 @@ function mustContain(file, needle, name) {
   const c = read(file);
   ok(name, c.includes(needle), `${file} missing "${needle.slice(0, 80)}"`);
 }
+function relLuminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(a, b) {
+  const [hi, lo] = [relLuminance(a), relLuminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
 
 // ── D3 clause 1: axe critical/serious would be zero if DOM contracts hold ──
-// We check the contracts that cause axe failures: dialog semantics, labels, etc.
+// Terminal shell semantics in index.html; error frames carry role=alert; native
+// <dialog>.showModal() replaced the hand-rolled focus trap and the old model backdrop.
 mustContain('index.html', 'role="status"', 'D3-1: status announcer present');
-mustContain('index.html', 'role="log"', 'D3-1: messages role=log');
+mustContain('index.html', 'role="log"', 'D3-1: transcript role=log');
 mustContain('index.html', 'viewport-fit=cover', 'D3-1: viewport-fit');
-mustContain('styles.css', '--safe-top', 'D3-1: safe-area tokens');
-mustContain('styles.css', '100dvh', 'D3-1: dvh');
-mustContain('js/a11y.js', 'trapDialog', 'D3-1: focus trap helper exists');
-mustContain('js/main.js', 'role', 'D3-1: settings dialog role dialog'); // at least presence
-mustContain('js/models.js', 'role', 'D3-1: model dialog role');
-ok('D3-1: boot skip button', read('index.html').includes('boot-skip'), 'index missing boot-skip');
-ok('D3-1: modal aria-modal', read('js/main.js').includes('aria-modal') && read('js/models.js').includes('aria-modal'), 'aria-modal missing');
+mustContain('index.html', 'aria-label="Terminal transcript"', 'D3-1: transcript labeled');
+mustContain('index.html', 'aria-label="Message, or a colon command"', 'D3-1: prompt input labeled');
+mustContain('index.html', 'aria-label="Status line"', 'D3-1: status line group labeled');
+mustContain('js/main.js', 'showModal', 'D3-1: native dialog showModal');
+mustContain('js/main.js', "setAttribute('role', 'alert')", 'D3-1: error frames role=alert');
+ok('D3-1: hand-rolled focus trap removed', !read('js/a11y.js').includes('trapDialog'), 'js/a11y.js still contains trapDialog — native <dialog> replaced it');
+ok('D3-1: old model backdrop removed', !read('js/models.js').includes('modal-backdrop'), 'js/models.js still contains modal-backdrop');
 
 // ── D3 clause 2: keyboard operability ──
-mustContain('index.html', 'aria-expanded', 'D3-2: brand toggle aria-expanded');
-mustContain('js/main.js', 'trapDialog', 'D3-2: settings trap');
-mustContain('js/models.js', 'trapDialog', 'D3-2: model trap');
-mustContain('js/main.js', "key === 'Escape'", 'D3-2: Escape handling');
-mustContain('js/a11y.js', 'aria-hidden', 'D3-2: inert fallback');
-mustContain('index.html', 'role="region"', 'D3-2: scrollable regions labeled');
-mustContain('js/main.js', 'aria-pressed', 'D3-2: hud aria-pressed');
+// Prompt input, `:` command suggestions, and native dialog dismissal are all keyboard-driven.
+mustContain('js/main.js', "key === 'Escape'", 'D3-2: Escape closes dialog and returns to prompt');
+mustContain('js/main.js', "'Tab'", 'D3-2: Tab completes suggestions');
+mustContain('js/main.js', "'ArrowUp'", 'D3-2: ArrowUp navigates suggestions');
+mustContain('js/main.js', "'ArrowDown'", 'D3-2: ArrowDown navigates suggestions');
 mustContain('styles.css', ':focus-visible', 'D3-2: focus-visible');
 
 // ── D3 clause 3: contrast ──
-ok('D3-3: --amber-dim lifted', read('styles.css').includes('--amber-dim: #c28200'), 'expected #c28200, check styles.css');
+ok('D3-3: --b-dim lifted', read('styles.css').includes('--b-dim: #a86c00'), 'expected --b-dim: #a86c00, check styles.css');
 
-// ── D3 clause 4: reduced motion ──
+// ── D3 clause 4: reduced motion + 320–375px first-class mobile ──
 mustContain('styles.css', 'prefers-reduced-motion', 'D3-4: reduced-motion media');
-ok('D3-4: boot respects reduced motion', read('js/main.js').includes('isReducedMotion'), 'boot no reduced check');
-mustContain('js/a11y.js', 'announceStatus', 'D3-4: announcer exists');
+mustContain('styles.css', '100dvh', 'D3-4: dvh');
+mustContain('styles.css', 'env(safe-area-inset-top', 'D3-4: safe-area top inset');
+mustContain('styles.css', 'env(safe-area-inset-bottom', 'D3-4: safe-area bottom inset');
+mustContain('styles.css', '@media (pointer: coarse)', 'D3-4: coarse-pointer touch tuning');
+mustContain('styles.css', 'min-height: 44px', 'D3-4: touch target 44px');
+mustContain('styles.css', '@media (max-width: 560px)', 'D3-4: reflow breakpoint 560');
+mustContain('js/main.js', 'visualViewport', 'D3-4: visualViewport keyboard offset');
 
 // ── D3 clause 5: live regions decoupled ──
 mustContain('index.html', 'id="a11y-status"', 'D3-5: announcer div');
 mustContain('index.html', 'aria-live="polite"', 'D3-5: polite live');
-mustContain('index.html', 'aria-live="off"', 'D3-5: messages live off');
-mustContain('js/main.js', "announceStatus('ASM Agent generating", 'D3-5: turn start announce');
-mustContain('js/main.js', "announceStatus('Search", 'D3-5: tool announce');
+mustContain('index.html', 'aria-live="off"', 'D3-5: transcript live off');
+mustContain('js/a11y.js', 'announceStatus', 'D3-5: announcer helper exists');
+mustContain('js/main.js', 'announceStatus(', 'D3-5: announcer used');
+mustContain('js/main.js', "'Searching", 'D3-5: tool announce');
 mustContain('js/main.js', 'Response complete', 'D3-5: completion announce');
-ok('D3-5: no per-token live', !read('js/main.js').includes("announceStatus(acc") && !read('js/main.js').includes('onDelta.*announce'), 'per-token thrashing detected');
+ok('D3-5: no per-token live', !read('js/main.js').includes('announceStatus(acc'), 'per-token thrashing detected');
 
-// ── D3 clause 6: all findings addressed ──
-mustContain('styles.css', 'min-height: 44px', 'D3-6: touch target 44px');
-mustContain('styles.css', '@media (max-width: 480px)', 'D3-6: reflow 480');
-mustContain('styles.css', '100vw', 'D3-6: 100vw overlays');
-mustContain('index.html', 'aria-label="Close Inspector"', 'D3-6: close label');
-mustContain('js/main.js', 'visualViewport', 'D3-6: visualViewport');
-mustContain('js/main.js', 'role', 'D3-6: dialog roles');
-
-// ── additional checks: body overflow not permanently hidden ──
-ok('body overflow not hidden trap', !read('styles.css').match(/body\s*\{[^}]*overflow:\s*hidden;/s) || read('styles.css').includes('overflow: auto'), 'body still overflow:hidden without fallback');
-ok('ensureMessagesLog called', read('js/main.js').includes('ensureMessagesLog'), 'ensureMessagesLog not called');
+// ── D3 clause 6: reflow satisfied by an internal scroll region ──
+// The shell pins the viewport and scrolls inside the transcript, so reflow needs the
+// transcript region to exist and to own its own overflow.
+mustContain('styles.css', '.b-transcript {', 'D3-6: transcript scroll region');
+mustContain('styles.css', 'overflow-y: auto', 'D3-6: internal scrolling');
 
 // ── triage: awesome-lists verdicts ──
 const triageRows = [
@@ -121,10 +131,20 @@ ok('triage: vanilla trap decision documented', true, '');
 ok('triage: no runtime FAIL shipped', true, '');
 
 // ── report ──
-console.log('=== a11y harness — D3 done-bar checks ===');
+console.log('=== a11y harness — done-bar checks (Command Line UI) ===');
 console.log(`PASS ${passes.length} / ${passes.length + failures.length}`);
 for (const p of passes) console.log(`ok  : ${p}`);
 for (const f of failures) console.log(`FAIL: ${f}`);
+console.log('');
+console.log('=== Contrast (informational — not asserted) ===');
+const dimHex = (read('styles.css').match(/--b-dim:\s*(#[0-9a-fA-F]{6})/) || [])[1];
+const bgHex = (read('styles.css').match(/--b-bg:\s*(#[0-9a-fA-F]{6})/) || [])[1] || '#0b0600';
+if (dimHex) {
+  const ratio = contrastRatio(dimHex, bgHex);
+  console.log(`--b-dim ${dimHex} on --b-bg ${bgHex}: ${ratio.toFixed(2)}:1 — WCAG 2.2 AA normal text needs >= 4.5:1 (${ratio >= 4.5 ? 'meets AA' : 'BELOW AA'})`);
+} else {
+  console.log('--b-dim token not found — contrast not computed');
+}
 console.log('');
 console.log('=== Awesome-lists triage (surgical filter) ===');
 console.log('| Candidate | Verdict | Rationale |');
@@ -135,16 +155,16 @@ for (const [name, , , , , , verdict, notes] of triageRows) {
 console.log('');
 console.log('=== iOS VoiceOver spot-check (10 min, manual, not gate) ===');
 console.log(`
-1. iPhone Safari 375×667, open https://nicolas-found42.github.io/assembly-agent/
-2. Enable VoiceOver (Settings > Accessibility) + Safari
-3. Swipe to brand button → hear "Toggle session list, button, collapsed" → double-tap toggles
-4. Swipe to SET → double-tap → hear "Settings dialog" → swipe through key input, CRT toggles → Escape (two-finger scrub) dismisses and returns focus
-5. Swipe to MODEL → hear "Model catalog" → search field focus → type → arrow nav announces option selection
-6. Dismiss boot via swipe to SKIP BOOT → double-tap → boot dismissed announcement
-7. Type query, send → hear "ASM Agent generating…" then "Searching…" → "Search complete" → "Response complete"
-8. During streaming, swipe to messages log → virtual cursor reads history without stutter (polite, not per-token)
-9. With Reduce Motion on (Settings > Accessibility > Motion > Reduce Motion), verify boot instant, no flicker/spin
-10. Rotate, check HUD composer stays above keyboard (visualViewport), safe-area insets not clipped
+1. iPhone Safari 375×667 (and 360×640 Android Chrome), open https://nicolas-found42.github.io/assembly-agent/
+2. Enable VoiceOver (Settings > Accessibility > VoiceOver) and use Safari.
+3. Swipe to the transcript: rotor announces "Terminal transcript, log" and replays history without per-token stutter.
+4. Swipe to the prompt line: hear "Message, or a colon command, text area" → type a message → double-tap send ("Send message").
+5. Type ":" alone → the command suggestions list appears; ArrowDown/ArrowUp move between suggestions, Tab completes, Enter runs.
+6. Run ":model" → the dialog is announced as a modal; the filter field is labeled; the chips toggle; Escape (two-finger scrub) closes it and focus returns to the prompt.
+7. Swipe to the status line → hear "Status line" with MODEL/PRESET/KEY/MEM/MSG/TOK/S/STATE segments; activating a segment opens its dialog.
+8. Send a query → hear "Searching …" then "Response complete"; the transcript is not re-announced per streamed token; the send button becomes "Stop generating".
+9. With Reduce Motion on (Settings > Accessibility > Motion > Reduce Motion), verify the caret, spinner, and scanline flicker stop and the terminal stays readable.
+10. Rotate and open the keyboard: the dock stays above the keyboard (visualViewport) and safe-area insets are not clipped.
 Mark manual steps as performed on real device; harness passes if static checks green.
 `);
 
