@@ -31,7 +31,7 @@ Adopt **variant B ("Command Line")** as the production UI and delete the old one
 - `styles.css` is a port of `prototype/variant-b.css` with safe-area top inset, stop-state
   send button, session-row actions, key-test badge, and copy buttons added; the
   prototype-only switcher clearance gutter is dropped.
-- The prototype harness (`prototype/`) stays in the repo for reference but is gitignored
+- The prototype harness (`prototype/`) stays on disk locally as the spec source — gitignored, not tracked
   and never imported by production code.
 
 ## Consequences

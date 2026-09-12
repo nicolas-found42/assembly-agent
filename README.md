@@ -10,15 +10,17 @@
 
 A single-page amber phosphor terminal that does one thing well: chat with any OpenRouter model through a WAT core that owns streaming, history, and model catalog.
 
-- **WAT engine** `src/agent.wat` → `dist/agent.wasm` — zero imports, linear-memory I/O. All JS↔WASM comms via `scratch` (`0x80000`) and control slots (`0x00`). See **Memory** inspector tab live.
+- **WAT engine** `src/agent.wat` → `dist/agent.wasm` — zero imports, linear-memory I/O. All JS↔WASM comms via `scratch` (`0x80000`) and control slots (`0x00`). See `:mem` for live region sizes.
 - **Model catalog** — `GET https://openrouter.ai/api/v1/models` → TLV → WASM `0x20000..0x30FFF` (512×128B records, pool `0x31000`). Sort/filter in WASM (`PRICE/CONTEXT/LATENCY/THROUGHPUT/LATEST`), selection in `localStorage['asm.activeModel']`.
 - **Chat loop** `js/bridge.js` — SSE → `E.sse_feed()` → `E.render_ptr()/E.render_len()` drain, up to 5 tool rounds. `web_search` fan-out `js/search.js` (keyless-first: Wikipedia/HN/DuckDuckGo/StackExchange/GitHub + optional Tavily/Brave/Jina).
-- **CRT** `styles.css` — scanlines, curvature, flicker, `VT323` + `JetBrains Mono`, HUD telemetry `MEM · MSG · TOK/S · STATE`.
+- **CRT** `styles.css` — scanlines, curvature, flicker, `VT323` + `JetBrains Mono`, status line `SESSION · MODEL · PRESET · KEY · MEM · MSG · TOK/S · STATE`.
 
 Verified model id: `GET /api/v1/models` → 415 ids, `nvidia/nemotron-3.5-lightning:free` exists.
 
 
 ## Demo thread — the GIF
+
+> The GIF predates the Command Line UI (August 2025): it shows the retired HUD/sidebar layout. The engine, streaming, and tool-card behavior shown are unchanged.
 
 - **Query:** `what are the 5 latest AI models on openrouter`
 - **Model:** `NVIDIA: Nemotron 3.5 Lightning (free)` → `nvidia/nemotron-3.5-lightning:free`
@@ -41,11 +43,11 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-1. Click **SET** → paste OpenRouter key (`sk-or-...`) → **TEST** → `VALID ✓` (checks `GET /api/v1/key`)
-2. Click **MODEL: …** → pick **NVIDIA: Nemotron 3.5 Lightning (free)** (or any model; catalog loads from OpenRouter, TLV'd into WASM)
-3. Type query, **ENTER** to transmit
+1. Run `:key` → paste OpenRouter key (`sk-or-...`) → **TEST** → `VALID ✓` (checks `GET /api/v1/key`); anonymous users can skip this and stay on `:free` models via the Proxy
+2. Run `:model` (or click **MODEL** on the status line) → pick **NVIDIA: Nemotron 3.5 Lightning (free)** (or any model; catalog loads from OpenRouter, TLV'd into WASM)
+3. Type a query at the prompt, **ENTER** to transmit — `:` enters command mode, `?` or `:keys` lists everything
 
-Optional search keys (fan-out still works without them): Tavily `tvly-…`, Brave `BSA…`, Jina `jina_…` in **SET**.
+Optional search keys (fan-out still works without them): Tavily `tvly-…`, Brave `BSA…`, Jina `jina_…` in the `:key` dialog.
 
 No install beyond `wabt`. The site is static; `dist/agent.wasm` is the only build artifact.
 
@@ -55,9 +57,9 @@ No install beyond `wabt`. The site is static; `dist/agent.wasm` is the only buil
 - **Streaming** — SSE bytes staged into `0x80000`, fed via `E.sse_feed(ptr,len)`, incremental `renderMarkdown` via `marked` + `DOMPurify` + `hljs`.
 - **Tools** — `web_search` declared to model; WASM sets `tool_pending` → JS runs `webSearch(query)` → `E.tool_result_append` → next round with tool results in history.
 - **Sessions** — `localStorage` (`asm.sessions`, `asm.activeSession`, `asm.settings`), markdown/JSON export, system-prompt presets.
-- **Inspector** — **ASM** button → `SOURCE` (WAT) + `MEMORY` (HEAP/HISTORY/POOL/RENDER/MODELS bars).
+- **Command surface** — `:` commands (`:model :preset :session :key :mem :wat :status :scan :curve :flicker :sound :clear :keys`) with tab completion; native `<dialog>` overlays for pickers.
 
-## Memory map (live in inspector)
+## Memory map (live via `:mem`)
 
 | Range | Name | Notes |
 |-------|------|-------|
@@ -74,12 +76,12 @@ No install beyond `wabt`. The site is static; `dist/agent.wasm` is the only buil
 ## Project structure
 
 ```
-index.html          # CRT layout, HUD, sidebar, composer, inspector
+index.html          # Command Line shell: transcript, status line, prompt dock
 styles.css          # amber phosphor theme, scanlines/vignette/flicker
 js/
-  main.js           # boot, HUD, settings, composer, sessions sidebar
+  main.js           # boot, turn loop, :commands, dialogs, status line
   bridge.js         # WASM instantiate + send() loop (5 tool rounds)
-  models.js         # catalog fetch + TLV + combobox
+  models.js         # catalog fetch + TLV + sort/filter API
   search.js         # parallel fan-out search
   sessions.js       # localStorage sessions/settings
   markdown.js       # marked + purify + hljs
