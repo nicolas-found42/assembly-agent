@@ -1,16 +1,21 @@
-// models.js — OpenRouter catalog, rank maps, TLV serialize, combobox UI.
+// models.js — OpenRouter catalog, rank maps, TLV serialize, selection.
 // Catalog: /api/v1/models (default) + two sorted variants for rank maps.
+// The picker UI lives in js/main.js (Command Line dialog); this module is the
+// data + wasm sort/filter surface only.
 
-import { eng, memBuf, u8, str } from './bridge.js';
-import { trapDialog, releaseTrap } from './a11y.js';
+import { eng, memBuf, str } from './bridge.js';
+
 const API = 'https://openrouter.ai/api/v1';
-const MASKS = { ALL: 0, FREE: 1, VISION: 2, REASONING: 4, TOOLS: 8, 'CTX≥128K': 16, 'TPS TOP-20': 32 };
-const SORTS = ['PRICE', 'CONTEXT', 'LATENCY', 'THROUGHPUT', 'LATEST'];
+export const MASKS = { ALL: 0, FREE: 1, VISION: 2, REASONING: 4, TOOLS: 8, 'CTX≥128K': 16, 'TPS TOP-20': 32 };
+export const SORTS = ['PRICE', 'CONTEXT', 'LATENCY', 'THROUGHPUT', 'LATEST'];
 // default direction per metric: price asc, context desc, latency asc, tps desc(rank asc), latest desc
-const DEFAULT_DESC = [0, 1, 0, 0, 1];
+export const DEFAULT_DESC = [0, 1, 0, 0, 1];
 
 let catalog = []; // JS-side mirror for default-model logic
+let catalogCount = 0;
+
 const isAnon = () => { try { const s = JSON.parse(localStorage['asm.settings'] || '{}'); return !s.key; } catch { return true; } };
+export const isAnonUser = isAnon;
 
 async function fetchJson(url) {
   const r = await fetch(url);
@@ -58,8 +63,11 @@ export async function loadCatalog() {
   const E = eng();
   const S = E.scratch();
   new Uint8Array(memBuf(), S, blob.length).set(blob);
-  return E.models_load(S, blob.length);
+  catalogCount = E.models_load(S, blob.length);
+  return catalogCount;
 }
+
+export const catalogSize = () => catalogCount;
 
 function serializeTLV(models) {
   const parts = [];
@@ -106,6 +114,7 @@ export function visibleModel(i) {
   };
 }
 
+/** Sort + filter the wasm catalog; returns the visible count. */
 export function applyView(metric, desc, mask, query) {
   const E = eng();
   const q = new TextEncoder().encode(query || '');
@@ -128,7 +137,7 @@ export function defaultModelId() {
 
 export function getActiveModel() {
   const saved = localStorage['asm.activeModel'];
-  // Q12 B: Anonymous users see only Free Models — force free if saved is paid
+  // Anonymous users see only Free Models — force free if saved is paid
   if (isAnon() && saved) {
     const hit = catalog.find((m) => m.id === saved);
     if (hit && !hit.free && !saved.endsWith(':free')) {
@@ -144,196 +153,3 @@ export function getActiveModel() {
 }
 
 export function setActiveModel(id) { localStorage['asm.activeModel'] = id; }
-
-// ── combobox modal ──────────────────────────────────────────────────────
-let modal = null;
-let modalTrigger = null;
-let state = { metric: 4, desc: 1, mask: 0, query: '', active: 0 };
-let onSelect = null;
-
-export function openCombobox(cb) {
-  onSelect = cb;
-  if (!modal) modal = buildModal();
-  if (isAnon()) state.mask = 1;
-  state.query = '';
-  state.active = 0;
-  modal.querySelector('.model-search input').value = '';
-  refresh();
-  modal.hidden = false;
-  modalTrigger = document.getElementById('btn-model');
-  try { trapDialog(modal, modalTrigger, closeCombobox); } catch {}
-  modal.querySelector('.model-search input').focus();
-}
-
-export function closeCombobox() {
-  if (!modal || modal.hidden) return;
-  modal.hidden = true;
-  try { releaseTrap(); } catch {}
-  try { if (modalTrigger && typeof modalTrigger.focus === 'function') modalTrigger.focus(); } catch {}
-}
-
-function buildModal() {
-  const el = document.createElement('div');
-  el.className = 'modal-backdrop';
-  el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-modal', 'true');
-  el.setAttribute('aria-labelledby', 'model-title');
-  el.hidden = true;
-  el.innerHTML = `
-    <div class="modal model-modal" role="document">
-      <div class="model-head">
-        <span class="modal-title" id="model-title">MODEL CATALOG</span>
-        <button class="icon-btn model-close" aria-label="Close Model Catalog">ESC</button>
-      </div>
-      <div class="model-search"><input id="model-search-input" placeholder="SEARCH MODEL…" spellcheck="false" aria-label="Search models"></div>
-      <div class="model-pills"></div>
-      <div class="model-sorts"></div>
-      <div class="model-count"></div>
-      <div class="model-list" tabindex="0" role="listbox" aria-label="Model list"></div>
-    </div>`;
-  document.body.appendChild(el);
-
-  const input = el.querySelector('.model-search input');
-  let t = null;
-  input.addEventListener('input', () => {
-    clearTimeout(t);
-    t = setTimeout(() => { state.query = input.value; state.active = 0; refresh(); }, 120);
-  });
-  // Combobox: allow ArrowDown/Up/Enter from search input to navigate list (focus stays in input)
-  input.addEventListener('keydown', (ev) => {
-    const list = el.querySelector('.model-list');
-    const rows = list?.querySelectorAll('.model-row');
-    if (!rows || !rows.length) return;
-    if (ev.key === 'ArrowDown') {
-      state.active = Math.min(state.active + 1, rows.length - 1);
-      ev.preventDefault();
-      highlight(rows);
-    } else if (ev.key === 'ArrowUp') {
-      state.active = Math.max(state.active - 1, 0);
-      ev.preventDefault();
-      highlight(rows);
-    } else if (ev.key === 'Enter') {
-      const target = rows[state.active];
-      if (target) { ev.preventDefault(); target.click(); }
-    }
-  });
-  const pills = el.querySelector('.model-pills');
-  for (const [name, mask] of Object.entries(MASKS)) {
-    const b = document.createElement('button');
-    b.className = 'pill';
-    b.textContent = name;
-    b.dataset.mask = mask;
-    b.addEventListener('click', () => {
-      // Q12 B: Anonymous Users locked to FREE
-      if (isAnon() && mask !== 1 && mask !== 0) {
-        // allow ALL (0) to toggle back? No — force FREE for anon
-        state.mask = 1;
-      } else if (isAnon() && mask === 0) {
-        state.mask = 1;
-      } else {
-        state.mask = mask;
-      }
-      state.active = 0; refresh();
-    });
-    pills.appendChild(b);
-  }
-
-  const sorts = el.querySelector('.model-sorts');
-  SORTS.forEach((name, i) => {
-    const b = document.createElement('button');
-    b.className = 'sort-btn';
-    b.textContent = name;
-    b.dataset.metric = i;
-    b.addEventListener('click', () => {
-      if (state.metric === i) state.desc = state.desc ? 0 : 1;
-      else { state.metric = i; state.desc = DEFAULT_DESC[i]; }
-      state.active = 0;
-      refresh();
-    });
-    sorts.appendChild(b);
-  });
-  const dir = document.createElement('button');
-  dir.className = 'sort-btn dir-btn';
-  dir.textContent = '▲/▼';
-  dir.title = 'toggle direction';
-  dir.addEventListener('click', () => { state.desc = state.desc ? 0 : 1; refresh(); });
-  sorts.appendChild(dir);
-
-  el.querySelector('.model-close').addEventListener('click', closeCombobox);
-  el.addEventListener('mousedown', (ev) => { if (ev.target === el) closeCombobox(); });
-
-  const list = el.querySelector('.model-list');
-  list.addEventListener('keydown', (ev) => {
-    const rows = list.querySelectorAll('.model-row');
-    if (ev.key === 'ArrowDown') { state.active = Math.min(state.active + 1, rows.length - 1); ev.preventDefault(); highlight(rows); }
-    else if (ev.key === 'ArrowUp') { state.active = Math.max(state.active - 1, 0); ev.preventDefault(); highlight(rows); }
-    else if (ev.key === 'Enter') { rows[state.active]?.click(); }
-  });
-  el.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeCombobox(); });
-
-  function highlight(rows) {
-    rows.forEach((r, i) => r.classList.toggle('active', i === state.active));
-    rows[state.active]?.scrollIntoView({ block: 'nearest' });
-  }
-  el._highlight = highlight;
-  return el;
-}
-
-function refresh() {
-  if (!modal) return;
-  const n = applyView(state.metric, state.desc, state.mask, state.query);
-  const list = modal.querySelector('.model-list');
-  const count = modal.querySelector('.model-count');
-  const activeId = localStorage['asm.activeModel'];
-
-  modal.querySelectorAll('.pill').forEach((p) =>
-    p.classList.toggle('on', Number(p.dataset.mask) === state.mask));
-  modal.querySelectorAll('.sort-btn[data-metric]').forEach((b) => {
-    const on = Number(b.dataset.metric) === state.metric;
-    b.classList.toggle('on', on);
-    b.textContent = SORTS[Number(b.dataset.metric)] + (on ? (state.desc ? ' ▼' : ' ▲') : '');
-  });
-
-  count.textContent = `${n} / ${catalog.length} MODELS`;
-
-  const frag = document.createDocumentFragment();
-  const max = Math.min(n, 400);
-  for (let i = 0; i < max; i++) {
-    const m = visibleModel(i);
-    const row = document.createElement('div');
-    row.className = 'model-row' + (m.id === activeId ? ' selected' : '') + (i === state.active ? ' active' : '');
-    row.dataset.i = i;
-    row.setAttribute('role', 'option');
-    row.setAttribute('aria-selected', String(m.id === activeId));
-    row.setAttribute('aria-label', m.name);
-    const badges = [
-      m.flags & 1 ? 'FREE' : '', m.flags & 2 ? 'VISION' : '', m.flags & 4 ? 'REASON' : '', m.flags & 8 ? 'TOOLS' : '',
-    ].filter(Boolean).map((b) => `<span class="badge">${b}</span>`).join(' ');
-    const ranks = [
-      m.lat > 0 ? `#${m.lat} LAT` : '', m.tps > 0 ? `#${m.tps} TPS` : '',
-    ].filter(Boolean).map((b) => `<span class="rank-badge">${b}</span>`).join(' ');
-    row.innerHTML = `
-      <div class="mr-main">
-        <span class="mr-name">${escapeHtml(m.name)}</span>
-        <span class="mr-meta">${humanCtx(m.ctx)} · ${!(m.pp > 0) && !(m.pc > 0) ? 'FREE' : `${money(Math.max(0, m.pp))} in · ${money(Math.max(0, m.pc))} out`} ${badges} ${ranks}</span>
-      </div>
-      <div class="mr-provider">${escapeHtml(m.id.split('/')[0] || '')}</div>`;
-    row.addEventListener('click', () => {
-      setActiveModel(m.id);
-      onSelect?.(m.id, m);
-      closeCombobox();
-    });
-    frag.appendChild(row);
-  }
-  if (n > max) {
-    const more = document.createElement('div');
-    more.className = 'model-more';
-    more.textContent = `… ${n - max} more — refine the search`;
-    frag.appendChild(more);
-  }
-  list.replaceChildren(frag);
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}

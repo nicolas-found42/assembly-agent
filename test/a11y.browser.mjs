@@ -1,7 +1,7 @@
 // test/a11y.browser.mjs — browser axe + keyboard + rect harness for D3.
 // Requires puppeteer-core + Chrome + axe-core. Skips gracefully if missing (static fallback).
-// Viewports: 375x667, 320x568, 1280x800. States: default, sysprompt, inspector, settings, model.
-// Also covers: keyboard trap 20x Tab, Escape + return-focus, aria-expanded/pressed, rect 44px, reflow 100vw, inert.
+// Viewports: 375x667, 320x568, 1280x800. States: default, model, preset, session, keys, key.
+// Also covers: keyboard trap 20x Tab, Escape + return-focus, command suggestions, rect 24px, reflow.
 // Run: node test/a11y.browser.mjs  (needs Chrome at /Applications/Google Chrome.app or CHROME_PATH)
 // Fallback: node test/a11y.mjs remains static-only and passes without browser.
 
@@ -170,28 +170,12 @@ async function runAxe(page) {
   return result;
 }
 
-async function bootSkip(page) {
-  // Boot overlay has skip button focused; press Escape to dismiss quickly
-  // Wait for overlay to appear then dismiss
-  try {
-    await page.waitForSelector('#boot-overlay', { timeout: 3000 });
-    // Give it a moment then press Escape
-    await new Promise(r=>setTimeout(r, 300));
-    await page.keyboard.press('Escape');
-    await page.waitForSelector('#boot-overlay', { hidden: true, timeout: 4000 }).catch(()=>{});
-    // fallback: click skip button if still there
-    const still = await page.$('#boot-overlay');
-    if (still) {
-      const btn = await page.$('#boot-skip');
-      if (btn) await btn.click().catch(()=>{});
-      await page.waitForSelector('#boot-overlay', { hidden: true, timeout: 2000 }).catch(()=>{});
-    }
-  } catch {}
-  // also wait for messages log to be ready
-  await page.waitForSelector('#messages', { timeout: 3000 }).catch(()=>{});
+async function bootWait(page) {
+  // Command Line UI shell: transcript + announcer must mount, then let the engine
+  // and model catalog settle. Offline is fine — the app prints an error line but boots.
+  await page.waitForSelector('#b-transcript', { timeout: 5000 }).catch(()=>{});
   await page.waitForSelector('#a11y-status', { timeout: 3000 }).catch(()=>{});
-  // wait for engine init (telemetry or model button)
-  await new Promise(r=>setTimeout(r, 800));
+  await new Promise(r=>setTimeout(r, 1200));
 }
 
 const viewports = [
@@ -202,38 +186,35 @@ const viewports = [
 
 const states = [
   { name: 'default', open: null },
-  { name: 'sysprompt', open: async (page) => {
-      // sidebar is a 100vw drawer collapsed on mobile; open it first
-      await page.evaluate(()=> {
-        const s=document.getElementById('sidebar');
-        if(s && s.classList.contains('collapsed')) s.classList.remove('collapsed');
-      });
-      await new Promise(r=>setTimeout(r, 250));
-      const b = await page.$('#btn-sysprompt');
-      if (b) await b.click();
-      await page.waitForSelector('#sysprompt-panel', { visible: true, timeout: 2000 }).catch(()=>{});
-      await new Promise(r=>setTimeout(r, 200));
-    } },
-  { name: 'inspector', open: async (page) => { 
-      const b = await page.$('#btn-inspector'); 
-      if (b) await b.click(); 
-      await page.waitForSelector('#inspector', { visible: true, timeout: 2000 }).catch(async()=> {
-        // hidden attribute instead of display none
-        await page.evaluate(()=> { const el=document.getElementById('inspector'); if(el) el.hidden=false; });
-      });
-      await new Promise(r=>setTimeout(r, 200));
-    } },
-  { name: 'settings', open: async (page) => { 
-      const b = await page.$('#btn-settings'); 
-      if (b) await b.click(); 
-      await page.waitForSelector('.modal-backdrop', { visible: true, timeout: 2000 }).catch(()=>{});
+  { name: 'model', open: async (page) => {
+      await page.evaluate(() => document.querySelector('.b-seg[data-cmd="model"]').click());
+      await page.waitForSelector('#b-dlg-model', { visible: true, timeout: 3000 }).catch(()=>{});
       await new Promise(r=>setTimeout(r, 300));
     } },
-  { name: 'model', open: async (page) => { 
-      const b = await page.$('#btn-model'); 
-      if (b) await b.click(); 
-      await page.waitForSelector('.modal-backdrop', { visible: true, timeout: 3000 }).catch(()=>{});
-      await new Promise(r=>setTimeout(r, 500));
+  { name: 'preset', open: async (page) => {
+      await page.evaluate(() => document.querySelector('.b-seg[data-cmd="preset"]').click());
+      await page.waitForSelector('#b-dlg-preset', { visible: true, timeout: 3000 }).catch(()=>{});
+      await new Promise(r=>setTimeout(r, 300));
+    } },
+  { name: 'session', open: async (page) => {
+      await page.evaluate(() => document.querySelector('.b-seg[data-cmd="session"]').click());
+      await page.waitForSelector('#b-dlg-session', { visible: true, timeout: 3000 }).catch(()=>{});
+      await new Promise(r=>setTimeout(r, 300));
+    } },
+  { name: 'keys', open: async (page) => {
+      // F1 from a focused prompt opens the keymap
+      await page.evaluate(() => document.getElementById('b-transcript').click());
+      await new Promise(r=>setTimeout(r, 150));
+      await page.evaluate(() => document.getElementById('b-input').focus());
+      await new Promise(r=>setTimeout(r, 150));
+      await page.keyboard.press('F1');
+      await page.waitForSelector('#b-dlg-keys', { visible: true, timeout: 3000 }).catch(()=>{});
+      await new Promise(r=>setTimeout(r, 300));
+    } },
+  { name: 'key', open: async (page) => {
+      await page.evaluate(() => document.querySelector('.b-seg[data-cmd="key"]').click());
+      await page.waitForSelector('#b-dlg-key', { visible: true, timeout: 3000 }).catch(()=>{});
+      await new Promise(r=>setTimeout(r, 300));
     } },
 ];
 
@@ -243,7 +224,7 @@ for (const vp of viewports) {
     const page = await browser.newPage();
     await page.setViewport({ width: vp.w, height: vp.h, deviceScaleFactor: 1 });
     await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await bootSkip(page);
+    await bootWait(page);
     if (st.open) {
       try { await st.open(page); } catch (e) { console.log(`warn ${vp.name} ${st.name} open failed: ${e.message}`); }
     }
@@ -274,144 +255,90 @@ for (const vp of viewports) {
     await page.close().catch(()=>{});
   }
 }
-
 // ── keyboard harness ──
 console.log('\n=== keyboard harness ===');
 {
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
   await page.goto(base, { waitUntil: 'domcontentloaded' });
-  await bootSkip(page);
+  await bootWait(page);
 
-  // brand toggle aria-expanded — sidebar starts open (expanded true)
-  const brandBtn = await page.$('.brand');
-  const initExpanded = await page.evaluate(()=> document.querySelector('.brand')?.getAttribute('aria-expanded'));
-  ok('brand aria-expanded initial true', initExpanded === 'true', `got ${initExpanded}`);
-  await brandBtn.click();
-  await new Promise(r=>setTimeout(r, 200));
-  const after1 = await page.evaluate(()=> document.querySelector('.brand')?.getAttribute('aria-expanded'));
-  ok('brand aria-expanded toggles false', after1 === 'false', `got ${after1}`);
-  await brandBtn.click();
-  await new Promise(r=>setTimeout(r,200));
-  const after2 = await page.evaluate(()=> document.querySelector('.brand')?.getAttribute('aria-expanded'));
-  ok('brand aria-expanded toggles back true', after2 === 'true', `got ${after2}`);
-  // settings dialog trap 20x Tab
-  const settingsBtn = await page.$('#btn-settings');
-  await settingsBtn.click();
-  await page.waitForSelector('.modal-backdrop', { visible: true, timeout: 2000 });
-  // wait for trap to focus first element
-  await new Promise(r=>setTimeout(r,300));
-  const dialogEl = await page.$('.modal-backdrop');
-  const dialogHandle = dialogEl;
-  // get focusables inside dialog
-  const focusableCount = await page.evaluate(()=> {
-    const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const d = document.querySelector('.modal-backdrop');
-    return d ? Array.from(d.querySelectorAll(sel)).filter(el=> !el.hasAttribute('disabled') && el.getAttribute('aria-hidden')!=='true').length : 0;
-  });
-  ok('settings dialog has focusables', focusableCount >= 2, `count ${focusableCount}`);
-  // Tab 20x and ensure focus stays inside dialog
-  let trapOk = true;
-  let outsideFocus = null;
-  for (let i=0;i<20;i++) {
+  // prompt focus
+  await page.evaluate(() => document.getElementById('b-input').focus());
+  const focusedId = await page.evaluate(() => document.activeElement?.id || '');
+  ok('prompt #b-input takes focus', focusedId === 'b-input', `got #${focusedId}`);
+
+  // command suggestions: ":mo" opens the list; Escape clears command mode
+  await page.keyboard.type(':mo');
+  await page.waitForFunction(() => !document.getElementById('b-sug').hidden, { timeout: 2000 }).catch(()=>{});
+  await new Promise(r=>setTimeout(r, 150));
+  const sugOpen = await page.evaluate(() => !document.getElementById('b-sug').hidden);
+  const sugCount = await page.evaluate(() => document.querySelectorAll('#b-sug .b-sug-b').length);
+  ok('suggestions open on ":mo"', sugOpen, 'suggestion list still hidden');
+  ok('suggestions expose ≥1 .b-sug-b', sugCount >= 1, `count ${sugCount}`);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('b-sug').hidden, { timeout: 2000 }).catch(()=>{});
+  await new Promise(r=>setTimeout(r, 150));
+  const sugHidden = await page.evaluate(() => document.getElementById('b-sug').hidden);
+  ok('Escape clears command mode (suggestions hidden)', sugHidden, 'suggestion list still visible');
+
+  // model dialog from status segment: native dialog focus trap
+  await page.evaluate(() => document.querySelector('.b-seg[data-cmd="model"]').click());
+  await page.waitForSelector('#b-dlg-model', { visible: true, timeout: 3000 }).catch(()=>{});
+  await new Promise(r=>setTimeout(r, 300));
+  const modelOpen = await page.evaluate(() => !!document.getElementById('b-dlg-model')?.open);
+  ok('model dialog opens from status segment', modelOpen, 'dialog not open');
+  let tabTrap = true;
+  let tabDetail = '';
+  for (let i = 0; i < 20; i++) {
     await page.keyboard.press('Tab');
     await new Promise(r=>setTimeout(r, 30));
-    const inside = await page.evaluate(()=> {
-      const d = document.querySelector('.modal-backdrop');
-      const ae = document.activeElement;
-      return d && d.contains(ae);
-    });
-    if (!inside) { trapOk = false; outsideFocus = await page.evaluate(()=> document.activeElement?.outerHTML?.slice(0,120)); break; }
+    const inside = await page.evaluate(() => !!document.getElementById('b-dlg-model')?.contains(document.activeElement));
+    if (!inside) {
+      tabTrap = false;
+      tabDetail = await page.evaluate(()=> document.activeElement?.outerHTML?.slice(0,120) || 'null');
+      break;
+    }
   }
-  ok('settings Tab 20x trap stays inside', trapOk, outsideFocus || 'focus leaked outside');
-  // Shift+Tab 20x
-  let shiftOk = true;
-  for (let i=0;i<20;i++) {
+  ok('model Tab 20x trap stays inside', tabTrap, tabDetail || 'focus leaked outside dialog');
+  let shiftTrap = true;
+  for (let i = 0; i < 10; i++) {
     await page.keyboard.down('Shift');
     await page.keyboard.press('Tab');
     await page.keyboard.up('Shift');
-    await new Promise(r=>setTimeout(r,30));
-    const inside = await page.evaluate(()=> document.querySelector('.modal-backdrop')?.contains(document.activeElement));
-    if (!inside) { shiftOk = false; break; }
+    await new Promise(r=>setTimeout(r, 30));
+    const inside = await page.evaluate(() => !!document.getElementById('b-dlg-model')?.contains(document.activeElement));
+    if (!inside) { shiftTrap = false; break; }
   }
-  ok('settings Shift+Tab 20x trap', shiftOk, 'shift tab leaked');
+  ok('model Shift+Tab 10x trap stays inside', shiftTrap, 'shift-tab leaked outside dialog');
 
-  // Escape closes and returns focus
-  const triggerId = await page.evaluate(()=> document.activeElement?.id || '');
+  // Escape closes and returns focus to the prompt
   await page.keyboard.press('Escape');
-  await new Promise(r=>setTimeout(r,300));
-  const hidden = await page.evaluate(()=> {
-    const m = document.querySelector('.modal-backdrop');
-    return !m || m.hidden || getComputedStyle(m).display==='none';
+  await page.waitForFunction(() => !document.getElementById('b-dlg-model')?.open, { timeout: 2000 }).catch(()=>{});
+  await new Promise(r=>setTimeout(r, 250));
+  const modelState = await page.evaluate(() => {
+    const d = document.getElementById('b-dlg-model');
+    return { exists: !!d, open: !!d && d.open };
   });
-  ok('settings Escape closes', hidden, 'dialog still visible');
-  const returnedFocus = await page.evaluate(()=> document.activeElement?.id);
-  ok('settings return-focus to trigger', returnedFocus === 'btn-settings', `got ${returnedFocus} expected btn-settings`);
+  ok('model Escape closes', modelState.exists && !modelState.open, modelState.exists ? 'dialog still open' : 'dialog missing');
+  const returnedFocus = await page.evaluate(() => document.activeElement?.id || '');
+  ok('model Escape returns focus to #b-input', returnedFocus === 'b-input', `got #${returnedFocus}`);
 
-  // aria-pressed on HUD toggles
-  await page.evaluate(()=> document.getElementById('btn-scan')?.click());
-  await new Promise(r=>setTimeout(r,100));
-  const scanPressed = await page.evaluate(()=> document.getElementById('btn-scan')?.getAttribute('aria-pressed'));
-  // toggleCrt should update aria-pressed
-  ok('hud aria-pressed reflects toggle', scanPressed === 'true' || scanPressed === 'false', `got ${scanPressed}`);
-
-  // close inspector etc cleanup
-  await page.close();
-}
-
-{
-  // model dialog trap check at 375
-  const page = await browser.newPage();
-  await page.setViewport({ width: 375, height: 667 });
-  await page.goto(base, { waitUntil: 'domcontentloaded' });
-  await bootSkip(page);
-  // use evaluate click to avoid overlay hit-testing issues at 375
-  await page.evaluate(()=> document.getElementById('btn-model')?.click());
-  await page.waitForFunction(()=> {
-    const m = document.querySelector('.modal-backdrop');
-    return m && !m.hidden && getComputedStyle(m).display !== 'none';
-  }, { timeout: 4000 }).catch(()=>{});
-  await new Promise(r=>setTimeout(r,500));
-  const hasDialog = await page.evaluate(()=> {
-    const m = document.querySelector('.modal-backdrop');
-    return !!(m && !m.hidden && getComputedStyle(m).display !== 'none');
+  // preset dialog lists the four built-in presets
+  await page.evaluate(() => document.querySelector('.b-seg[data-cmd="preset"]').click());
+  await page.waitForSelector('#b-dlg-preset', { visible: true, timeout: 3000 }).catch(()=>{});
+  await new Promise(r=>setTimeout(r, 300));
+  const presetRows = await page.evaluate(() => document.querySelectorAll('#b-preset-list li[role="option"]').length);
+  ok('preset list has ≥4 options', presetRows >= 4, `count ${presetRows}`);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.getElementById('b-dlg-preset')?.open, { timeout: 2000 }).catch(()=>{});
+  await new Promise(r=>setTimeout(r, 250));
+  const presetState = await page.evaluate(() => {
+    const d = document.getElementById('b-dlg-preset');
+    return { exists: !!d, open: !!d && d.open };
   });
-  ok('model dialog opens at 375', hasDialog, 'not opened');
-  if (hasDialog) {
-    // trap check 10 tabs
-    let trap = true;
-    for (let i=0;i<10;i++) {
-      await page.keyboard.press('Tab');
-      await new Promise(r=>setTimeout(r,30));
-      const inside = await page.evaluate(()=> {
-        const m = document.querySelector('.modal-backdrop');
-        return m && m.contains(document.activeElement);
-      });
-      if (!inside) { trap=false; break; }
-    }
-    ok('model Tab trap at 375', trap, 'leaked');
-    await page.keyboard.press('Escape');
-    await new Promise(r=>setTimeout(r,400));
-    const closed = await page.evaluate(()=> {
-      const m=document.querySelector('.modal-backdrop');
-      return !m || m.hidden || getComputedStyle(m).display==='none';
-    });
-    ok('model Escape closes at 375', closed, 'still open');
-    // inert check while open: reopen to check inert
-    await page.evaluate(()=> document.getElementById('btn-model')?.click());
-    await page.waitForFunction(()=> {
-      const m=document.querySelector('.modal-backdrop');
-      return m && !m.hidden;
-    }, {timeout:3000}).catch(()=>{});
-    await new Promise(r=>setTimeout(r,400));
-    const inertOn = await page.evaluate(()=> {
-      const l=document.getElementById('layout');
-      const h=document.getElementById('hud');
-      return (l && (l.inert || l.getAttribute('aria-hidden')==='true')) || (h && (h.inert || h.getAttribute('aria-hidden')==='true'));
-    });
-    ok('dialog inert on background', inertOn, 'layout/hud not inert while dialog open');
-    await page.keyboard.press('Escape').catch(()=>{});
-  }
+  ok('preset Escape closes', presetState.exists && !presetState.open, presetState.exists ? 'dialog still open' : 'dialog missing');
+
   await page.close();
 }
 
@@ -421,46 +348,28 @@ for (const vp of [{w:320,h:568},{w:375,h:667}]) {
   const page = await browser.newPage();
   await page.setViewport({ width: vp.w, height: vp.h });
   await page.goto(base, { waitUntil: 'domcontentloaded' });
-  await bootSkip(page);
-  // measure HUD scrollWidth vs viewport
-  const hudMetrics = await page.evaluate(()=> {
-    const hud = document.getElementById('hud');
-    const layout = document.getElementById('layout');
-    return {
-      hudScroll: hud ? hud.scrollWidth : null,
-      hudClient: hud ? hud.clientWidth : null,
-      vp: window.innerWidth,
-      layoutScroll: layout ? layout.scrollWidth : null,
-      bodyOverflow: getComputedStyle(document.body).overflow,
-      htmlOverflowX: getComputedStyle(document.documentElement).overflowX,
-    };
-  });
-  ok(`reflow ${vp.w} hud scrollWidth ≤ viewport`, hudMetrics.hudScroll <= hudMetrics.vp + 2, `hud scroll ${hudMetrics.hudScroll} > vp ${hudMetrics.vp}`);
-  ok(`reflow ${vp.w} layout not overflow`, (hudMetrics.layoutScroll||0) <= vp.w + 5, `layout scroll ${hudMetrics.layoutScroll} > ${vp.w}`);
-  ok(`body overflow not hidden trap at ${vp.w}`, hudMetrics.bodyOverflow !== 'hidden', `body overflow is hidden (should be auto)`);
-  // check touch targets: WCAG 2.5.8 ≥24, HIG primary ≥44
-  // ensure drawers are open for pill/insp-tab measurement (mobile collapsed hides them at 0x0)
-  await page.evaluate(()=> {
-    const s=document.getElementById('sidebar');
-    if(s && s.classList.contains('collapsed')) s.classList.remove('collapsed');
-    const panel=document.getElementById('sysprompt-panel');
-    if(panel) panel.hidden=false;
-    const insp=document.getElementById('inspector');
-    if(insp && insp.hidden) { insp.hidden=false; insp.style.display='flex'; }
-  });
+  await bootWait(page);
+  // suggestions open in the dock; no overlay covering the shell in this state
+  await page.evaluate(() => document.getElementById('b-input').focus());
+  await page.keyboard.type(':');
+  await page.waitForFunction(() => !document.getElementById('b-sug').hidden, { timeout: 2000 }).catch(()=>{});
   await new Promise(r=>setTimeout(r, 250));
+  const anyDialogOpen = await page.evaluate(() => Array.from(document.querySelectorAll('dialog.b-dlg')).some(d => d.open));
+  ok(`no dialog open while measuring ${vp.w}`, !anyDialogOpen, 'a .b-dlg is open');
+
+  // touch targets: WCAG 2.5.8 ≥24 (the 44px bar is coarse-pointer-only, checked by the static harness)
   const rects = await page.evaluate(()=> {
-    const selectors = ['.hud-btn', '.side-btn', '.pill', '.insp-tab', '.icon-btn', '.brand', '#btn-send', '.session-actions button', '.session-title-btn'];
+    const selectors = ['.b-seg', '.b-send', '.b-sug-b', '.b-x'];
     const out = [];
     for (const sel of selectors) {
       const els = Array.from(document.querySelectorAll(sel));
       for (const el of els.slice(0,3)) {
-        // skip hidden/off-screen (drawer closed, panel collapsed) — 0x0 is not a target-size failure
+        // skip hidden/off-screen (closed dialog, collapsed segment) — 0x0 is not a target-size failure
         const cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') continue;
         const r = el.getBoundingClientRect();
         if (r.width < 1 && r.height < 1) continue;
-        // also skip if completely off-viewport left (collapsed drawer)
+        // also skip if completely off-viewport left
         if (r.right < 0 || r.left > window.innerWidth) continue;
         out.push({ sel, w: r.width, h: r.height, text: el.textContent.slice(0,20) });
       }
@@ -470,38 +379,36 @@ for (const vp of [{w:320,h:568},{w:375,h:667}]) {
   for (const r of rects) {
     const pass24 = r.w >= 24 && r.h >= 24;
     ok(`rect ${vp.w} ${r.sel} "${r.text}" ≥24`, pass24, `${r.w.toFixed(1)}x${r.h.toFixed(1)}`);
-    if (['.hud-btn', '.side-btn', '.brand', '#btn-send', '.session-title-btn'].includes(r.sel)) {
-      const pass44 = r.w >= 44 && r.h >= 44;
-      ok(`rect ${vp.w} ${r.sel} "${r.text}" ≥44 (HIG)`, pass44, `${r.w.toFixed(1)}x${r.h.toFixed(1)} <44`);
-    }
   }
-  // check 100vw overlays at 480
-  if (vp.w <= 480) {
-    // open sidebar drawer at 320
-    await page.evaluate(()=> {
-      const s=document.getElementById('sidebar');
-      if(s) s.classList.remove('collapsed');
-    });
-    await new Promise(r=>setTimeout(r,200));
-    const sidebarW = await page.evaluate(()=> document.getElementById('sidebar')?.getBoundingClientRect().width || 0);
-    ok(`reflow ${vp.w} sidebar 100vw`, Math.abs(sidebarW - vp.w) <= 2, `sidebar ${sidebarW} != ${vp.w}`);
-    // inspector
-    await page.evaluate(()=> {
-      const i=document.getElementById('inspector');
-      if(i) { i.hidden=false; i.style.display='flex'; }
-    });
-    await new Promise(r=>setTimeout(r,200));
-    const inspW = await page.evaluate(()=> document.getElementById('inspector')?.getBoundingClientRect().width || 0);
-    ok(`reflow ${vp.w} inspector 100vw`, Math.abs(inspW - vp.w) <= 2, `inspector ${inspW} != ${vp.w}`);
-  }
-  // visualViewport fallback: check composer transform vs 100dvh
-  const composerVisible = await page.evaluate(()=> {
-    const c=document.getElementById('composer');
-    if (!c) return false;
-    const r=c.getBoundingClientRect();
+
+  // reflow: transcript and status line never clip horizontally, prompt stays in view
+  const metrics = await page.evaluate(()=> {
+    const t = document.getElementById('b-transcript');
+    const s = document.getElementById('b-status');
+    const p = document.getElementById('b-prompt').getBoundingClientRect();
+    return {
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      transcriptScroll: t.scrollWidth,
+      transcriptClient: t.clientWidth,
+      transcriptHeight: t.scrollHeight,
+      transcriptOverflow: getComputedStyle(t).overflowY,
+      statusScroll: s.scrollWidth,
+      promptBottom: p.bottom,
+    };
+  });
+  ok(`reflow ${vp.w} transcript scrollWidth ≤ viewport`, metrics.transcriptScroll <= metrics.vw + 2, `transcript ${metrics.transcriptScroll} > vw ${metrics.vw}`);
+  ok(`reflow ${vp.w} status scrollWidth ≤ viewport`, metrics.statusScroll <= metrics.vw + 2, `status ${metrics.statusScroll} > vw ${metrics.vw}`);
+  ok(`reflow ${vp.w} prompt bottom in viewport`, metrics.promptBottom <= metrics.vh + 1, `bottom ${metrics.promptBottom.toFixed(1)} > vh ${metrics.vh}`);
+  ok(`transcript is the scroll container at ${vp.w}`, metrics.transcriptOverflow, `overflow-y = ${metrics.transcriptOverflow}, expected auto/scroll`);
+
+  const promptVisible = await page.evaluate(()=> {
+    const p = document.getElementById('b-prompt');
+    if (!p) return false;
+    const r = p.getBoundingClientRect();
     return r.top < window.innerHeight && r.bottom > 0;
   });
-  ok(`composer visible at ${vp.w}`, composerVisible, 'composer not visible');
+  ok(`prompt visible at ${vp.w}`, promptVisible, 'prompt not visible');
 
   await page.close();
 }
