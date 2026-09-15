@@ -373,12 +373,13 @@ describe("upstream contract (direct entry point, per-test env)", () => {
     expect(res.headers.get("content-type")).toBe("application/json");
     expect(res.headers.get("access-control-allow-origin")).toBe(GITHUB_ORIGIN);
     const body = await res.json();
-    // Characterised current behaviour: the handler catches the rejected fetch and discloses the raw
-    // exception text (needs a product decision if that is undesirable — the test pins only that it is
-    // an honest 502 and that no credential leaks).
-    expect(body.error.message).toMatch(/^Upstream fetch failed: /);
-    expect(body.error.message).not.toContain(DUMMY_KEY);
-    expect(JSON.stringify(body)).not.toContain(DUMMY_KEY);
+    // The 502 body is a stable, sanitised contract: one message for every transport failure, and no
+    // provider exception text (it can carry upstream internals) and no credential. The truncated
+    // exception stays in the Worker log line (status "upstream_fetch_error") — see
+    // docs/adr/0001-proxy-for-free-models.md.
+    expect(body).toEqual({ error: { message: "Upstream fetch failed" } });
+    expect(JSON.stringify(body)).not.toContain("simulated connection reset");
+    expect(JSON.stringify(body)).not.toContain("sk-or-");
   });
 });
 

@@ -134,7 +134,7 @@ export async function handleChat(request, env, ctx) {
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ ipHash, model, status: 'upstream_fetch_error', err: String(e).slice(0, 200) }));
-    return json(502, { error: { message: 'Upstream fetch failed: ' + String(e).slice(0, 300) } }, cors);
+    return json(502, { error: { message: 'Upstream fetch failed' } }, cors);
   }
 
   // If upstream is SSE streaming, pipe verbatim (no buffering) per ADR
