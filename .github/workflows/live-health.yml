@@ -66,6 +66,14 @@ jobs:
           # the script reads itself, so a served build from another commit is
           # reported as a stale artifact instead of a broken new one.
           LIVE_HEALTH_ENABLE_GENERATION: ${{ vars.LIVE_HEALTH_ENABLE_GENERATION }}
+          # Probe budget caps (repository variables). Unset/empty = the script's own
+          # default; the script validates every value it is given and rejects a
+          # non-integer or anything above its hard ceiling with a usage error
+          # before it does any network work.
+          LIVE_HEALTH_MAX_REQUESTS: ${{ vars.LIVE_HEALTH_MAX_REQUESTS }}
+          LIVE_HEALTH_MAX_TOKENS: ${{ vars.LIVE_HEALTH_MAX_TOKENS }}
+          LIVE_HEALTH_MAX_DURATION_MS: ${{ vars.LIVE_HEALTH_MAX_DURATION_MS }}
+          LIVE_HEALTH_MAX_CONCURRENCY: ${{ vars.LIVE_HEALTH_MAX_CONCURRENCY }}
         run: |
           set -euo pipefail
           status=0
