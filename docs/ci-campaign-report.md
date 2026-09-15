@@ -285,12 +285,14 @@ Residual risks:
   workerd harness — a change that would give up the pool's current-runtime
   property and is not part of this campaign. The two interfaces that would have to
   change besides the peers were checked rather than assumed:
-  `scripts/run-tests.mjs` gates on the reporter's `Tests  N passed (N)` block, and
-  vitest 5.0.0 emits that block
-  unchanged for the same suite (identical counts, `disableConsoleIntercept` still
-  honoured; only the `Duration` breakdown's wording differs, which the runner
-  never reads), and the worker suite touches none of the APIs vitest 5 removes or
-  tightens — its imports are exactly `describe`/`test`/`expect`/`beforeEach` plus
+  `scripts/run-tests.mjs` gates the class on the reporter's `Tests` block, and
+  vitest 5.0.0 prints that block exactly as 4.1.11 does — a mixed probe yields
+  `Tests  1 failed | 1 passed | 1 skipped (3)` under both, so the `failed`,
+  `passed` and `skipped` counters the runner reads (and fails on) parse
+  identically, `disableConsoleIntercept` is still honoured, and only the
+  `Duration` breakdown's wording differs, which the runner never reads. The
+  worker suite also touches none of the APIs vitest 5 removes or tightens — its
+  imports are exactly `describe`/`test`/`expect`/`beforeEach` plus
   `cloudflare:test`. So the deferral is a peer-range wait, not a harness
   migration.
 - Remote `img`/`video`/`audio` sources and the inline `style` attribute remain
