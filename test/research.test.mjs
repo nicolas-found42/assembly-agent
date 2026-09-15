@@ -1,12 +1,16 @@
 // research.test.mjs — the mandated initial research + query-planning boundary.
-// Runs real runTurn() turns against canned SSE streams (no network) and a
-// seam-level search adapter, exactly like tool-loop.mjs. Covers: the planner
-// unit cases, research-before-answer for every question shape and both model
-// tool capabilities, cache bypass, minimization at the doSearch boundary,
-// failure/empty/partial results, the research budget, cancellation during
-// research, mid-turn key removal, and the wording-correction pass.
+// Runs real runTurn() turns against canned SSE streams (no network) and
+// seam-level search and page-read adapters, exactly like tool-loop.mjs. Covers:
+// the planner unit cases, research-before-answer for every question shape and
+// both model tool capabilities, cache bypass, minimization at the doSearch
+// boundary, failure/empty/partial results, the research budget, cancellation
+// during research, mid-turn key removal, the wording-correction pass, the
+// per-request clock line, the source registry events, and the sufficiency gate
+// (supported / one repair / conflicting evidence), all against the REAL
+// research, evidence and source modules.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { setClockSeam } from '../js/clock.js';
 
 // ── browser shims (bridge -> search.js touches window+localStorage) ──
 globalThis.window = globalThis;
@@ -37,6 +41,37 @@ const toolCallSSE = (id, query) => sse([
 ]);
 
 // ── seam + fetch stubs ───────────────────────────────────────────────────
+/** Page-read seam: no network below the seam; a URL without a page fails. */
+const failedRead = async (url) => ({ ok: false, url, status: 'failed', reason: 'no read seam in this test' });
+
+/** read(url) -> the canned page for that URL (or a failed read), remembering
+ *  every URL the application asked for. */
+function readMap(pages) {
+  const seen = [];
+  const read = async (url) => { seen.push(url); return pages[url] || { ok: false, url, status: 'failed' }; };
+  read.seen = seen;
+  return read;
+}
+
+/** One canned search record per query; anything else returns an empty record. */
+function scriptedSearch(byQuery) {
+  const seen = [];
+  const search = async (query, opts) => {
+    seen.push({ query, opts, chatCalls: calls.length });
+    return byQuery[query] || { markdown: '', sources: 0, failures: ['no fixture'], perSource: [] };
+  };
+  search.seen = seen;
+  return search;
+}
+
+/** A SERP-shaped record: real fmt blocks an auto-read can find and read. */
+const serpRecord = (blocks) => ({
+  markdown: blocks.map((b) => `### [JINA WEB] ${b.title}\n${b.url}\n${b.snippet || 'result snippet'}\n`).join(''),
+  sources: blocks.length,
+  failures: [],
+  perSource: [{ tag: 'JINA WEB', hits: blocks.length, ms: 0 }],
+});
+
 const STUB_MD = '### [STUB] fixture\nhttps://stub.example/x\nbody\n';
 const record = (over = {}) => ({ markdown: STUB_MD, sources: 1, failures: [], perSource: [{ tag: 'STUB', hits: 1, ms: 0 }], ...over });
 function stubSearch(rec = record()) {
@@ -58,7 +93,10 @@ globalThis.fetch = async (url, opts) => {
 
 const bridge = await import('../js/bridge.js');
 const { planQuery, minimizeQuery, MAX_RESEARCH_ROUNDS } = await import('../js/research.js');
-const { BUDGET_NUDGE } = bridge;
+const { EVIDENCE_REPAIR_NUDGE } = await import('../js/guard.js');
+const { BUDGET_NUDGE, MAX_REPAIR_CYCLES, MAX_PAGE_READS } = bridge;
+assert.equal(MAX_REPAIR_CYCLES, 2, 'bridge exports the repair-cycle cap for the tests');
+assert.equal(MAX_PAGE_READS, 6, 'bridge exports the per-turn page-read cap for the tests');
 await bridge.initEngine();
 
 /** One runTurn() with a canned script. Overrides mirror the shipped opts. */
@@ -66,6 +104,7 @@ async function drive(text, responses, opts = {}) {
   const {
     system = SYSTEM, key = '', model = 'x/y:free', search = stubSearch(),
     persist = null, tools, retry, correct, acceptCorrection, seed = [],
+    read = failedRead,
   } = opts;
   const keyFn = typeof key === 'function' ? key : () => key;
   bridge.clearHistory();
@@ -89,7 +128,7 @@ async function drive(text, responses, opts = {}) {
   const summary = await bridge.runTurn(text, {
     system, getKey: keyFn, model, on,
     persist: persist || (() => persists.push(calls.length)),
-    search, tools, retry, correct, acceptCorrection,
+    search, read, tools, retry, correct, acceptCorrection,
   });
   return { events, seen, persists, summary, search, calls: calls.slice() };
 }
@@ -98,11 +137,14 @@ const kinds = (out) => out.events.map((e) => e.type);
 
 /** Assert the turn researched before it answered, whatever the question was. */
 function assertResearchedFirst(out, label, expected) {
-  assert.equal(kinds(out)[0], 'research-started', `${label}: the turn opens with research`);
-  assert.equal(kinds(out)[1], 'research-finished', `${label}: research settles before any model round`);
-  assert.equal(kinds(out)[2], 'round-started', `${label}: the first model round follows research`);
+  const seq = kinds(out);
+  assert.equal(seq[0], 'research-started', `${label}: the turn opens with research`);
+  assert.ok(seq.indexOf('research-finished') > 0, `${label}: the initial lookup settles`);
+  assert.ok(seq.indexOf('round-started') > seq.indexOf('research-finished'),
+    `${label}: the first model round follows research`);
   assert.equal(out.search.seen[0].chatCalls, 0, `${label}: no chat POST happens before the research fetch`);
-  assert.deepEqual(out.search.seen[0].opts, { fresh: true }, `${label}: the initial lookup asks for fresh results`);
+  assert.equal(out.search.seen[0].opts.fresh, true, `${label}: the initial lookup asks for fresh results`);
+  assert.equal(typeof out.search.seen[0].opts.plan.kind, 'string', `${label}: the initial lookup carries the plan`);
   assert.match(out.search.seen[0].query, expected, `${label}: planned query`);
   assert.equal(out.seen.finals.length, 1, `${label}: exactly one answer`);
   assert.equal(out.seen.done, 1, `${label}: turn closes once`);
@@ -213,7 +255,10 @@ function assertResearchedFirst(out, label, expected) {
         assert.ok(!s.forbid.test(out.search.seen[0].query), `${label}: the query carries no private words`);
       }
       assert.equal(out.calls[0].tools === undefined, !tools, `${label}: tool declaration follows opts.tools`);
-      assert.equal(out.calls[0].messages[0].content, s.system, `${label}: the caller system prompt rides the request`);
+      assert.ok(out.calls[0].messages[0].content.startsWith(s.system),
+        `${label}: the caller system prompt rides the request`);
+      assert.match(out.calls[0].messages[0].content, /Clock source: device\.$/,
+        `${label}: the clock line closes the system message`);
     }
   }
   // A tools-capable model that does call the tool: research still comes first.
@@ -432,6 +477,217 @@ function assertResearchedFirst(out, label, expected) {
   assert.equal(lastAssistant(), 'There is no such thing.', 'hedge empty: the original answer stays in history');
 
   console.log('ok  : failed or rejected rewrites never remove the standing answer');
+}
+
+// ── 11. the clock line is sampled per request, never per turn ───────────
+{
+  let tick = 0;
+  setClockSeam(() => ({ utc: `2026-09-15T10:00:${String(tick++).padStart(2, '0')}Z` }));
+  const stampOf = (call) => (call.messages[0].content.match(/UTC (\S+)\./) || [])[1];
+  let sampled = 0;
+  const expectFresh = (out, label) => {
+    const got = out.calls.map(stampOf);
+    const want = got.map(() => `2026-09-15T10:00:${String(sampled++).padStart(2, '0')}Z`);
+    assert.deepEqual(got, want, `${label}: each request carries the clock sampled for it`);
+  };
+  try {
+    // initial round -> round after the tool result -> wording pass
+    const tool = await drive('explain wasm', [
+      () => toolCallSSE('c1', 'wasm'),
+      () => textSSE('the first answer'),
+      () => textSSE('the corrected answer'),
+    ], { correct: 'Rewrite the answer in simple English.' });
+    assert.equal(tool.calls.length, 3, 'clock: initial, tool-result and wording requests');
+    expectFresh(tool, 'clock: initial + tool + wording');
+
+    // the budget-nudged pass is its own request
+    const responses = [];
+    for (let i = 0; i < MAX_RESEARCH_ROUNDS - 1; i++) responses.push(() => toolCallSSE(`c${i}`, `q${i}`));
+    responses.push(() => textSSE('the forced answer'));
+    const budget = await drive('hard question', responses);
+    expectFresh(budget, 'clock: nudged pass');
+
+    // the hedge pass is its own request
+    const hedge = await drive('q', [() => textSSE('There is no such thing.'), () => textSSE('An honest rewrite.')]);
+    assert.equal(hedge.calls.length, 2, 'clock: the hedge pass is a second request');
+    expectFresh(hedge, 'clock: hedge pass');
+
+    assert.ok(!bridge.historyMessages().some((m) => m.content.includes('Clock source')),
+      'clock: the clock line never enters history');
+  } finally {
+    setClockSeam(null);
+  }
+
+  // buildMessages: the clock rides the system message, alone when the caller
+  // has none, and never as a stored history entry.
+  bridge.clearHistory();
+  bridge.appendHistory(1, 'question');
+  const alone = bridge.buildMessages('', 'CLOCK LINE');
+  assert.equal(alone[0].role, 'system', 'clock-only: the clock opens the request');
+  assert.equal(alone[0].content, 'CLOCK LINE', 'clock-only: no invented system prompt');
+  assert.equal(alone[1].content, 'question', 'clock-only: history follows unchanged');
+  const appended = bridge.buildMessages('SYS', 'CLOCK LINE');
+  assert.equal(appended[0].content, 'SYS\n\nCLOCK LINE', 'clock: appended to the caller system prompt');
+  assert.equal(bridge.buildMessages()[0].role, 'user', 'clock: no system message when neither is given');
+  assert.ok(!bridge.historyMessages().some((m) => m.content.includes('CLOCK LINE')),
+    'clock: buildMessages never writes into history');
+  console.log('ok  : the clock line is fresh on every request path');
+}
+
+// ── 12. source registry events + the plan on every summary ──────────────
+{
+  const out = await drive('explain the water cycle', [
+    () => toolCallSSE('c1', 'water cycle evaporation'),
+    () => textSSE('the answer'),
+  ]);
+  const lists = out.events.filter((e) => e.type === 'sources').map((e) => e.list);
+  assert.ok(lists.length >= 3, 'sources: one event per registry mutation');
+  assert.ok(lists.every((l) => l.length === 1), 'sources: the same URL is never stored twice');
+  assert.equal(lists[0][0].url, 'https://stub.example/x', 'sources: the searched URL is registered');
+  assert.equal(lists[0][0].status, 'ok', 'sources: a search hit is a supporting source');
+  assert.deepEqual(lists[0].map((r) => r.id), lists.at(-1).map((r) => r.id), 'sources: ids stay stable');
+  assert.equal(out.summary.plan.kind, 'general', 'summary: the plan rides the TurnSummary');
+  assert.equal(out.summary.plan.query, 'explain water cycle', 'summary: the plan carries the searched query');
+  assert.equal(lists.at(-1)[0].origin, 'initial', 'sources: the first discovery keeps its origin');
+
+  // A throwing read adapter is a failure record, never a broken turn.
+  const throwing = await drive('explain the water cycle', [() => textSSE('answered without pages')], {
+    read: async () => { throw new Error('read exploded'); },
+  });
+  assert.deepEqual(throwing.seen.finals, ['answered without pages'], 'read failure: the turn still settles');
+  assert.deepEqual(throwing.seen.errors, [], 'read failure: no error surfaces');
+  assert.ok(throwing.events.filter((e) => e.type === 'sources').length >= 2,
+    'read failure: the failed read still reaches the registry');
+
+  // Non-factual turns are never assessed at all.
+  for (const [text, kind] of [
+    ['hello', 'greeting'],
+    ['translate this into French: the meeting is on Monday', 'translation'],
+    ['explain the water cycle', 'general'],
+  ]) {
+    const plain = await drive(text, [() => textSSE('an answer')]);
+    assert.equal(plain.summary.plan.kind, kind, `assessment: the "${kind}" plan kind`);
+    assert.equal(plain.events.filter((e) => e.type === 'assessment').length, 0,
+      `assessment: ${kind} turns are never assessed`);
+    assert.equal(plain.summary.assessment, undefined, `assessment: the ${kind} summary carries no verdict`);
+  }
+  console.log('ok  : sources events flow; non-factual turns are never assessed');
+}
+
+// ── 13. sufficiency gate: the leaderboard answers both planned facts ────
+{
+  const NBA_Q = 'who has the most points in nba history? how many points od they have?';
+  const INITIAL = 'NBA all-time career points leaders regular season';
+  const DEST = 'https://www.basketball-reference.com/leaders/pts_career.html';
+  const leaderboard = {
+    // No finalUrl: the plain readPage() shape for a page that did not redirect.
+    ok: true, url: DEST, title: 'NBA Career Points Leaders',
+    text: 'LeBron James holds the all-time scoring record with 42,184 points in the regular season.',
+    headings: [{ level: 1, text: 'Career Points Leaders' }],
+    tables: [{ headers: ['Player', 'Points'], rows: [['LeBron James', '42184']] }],
+  };
+  const AGREEING = 'https://www.statmuse.com/nba/points-leaders';
+  const agreeing = {
+    ok: true, url: AGREEING, finalUrl: AGREEING, title: 'NBA career points',
+    text: '', headings: [], tables: [{ headers: ['Player', 'Points'], rows: [['LeBron James', '42184']] }],
+  };
+  const search = scriptedSearch({
+    [INITIAL]: serpRecord([
+      { title: 'Weather in Paris', url: 'https://weather.example/paris' }, // score 0: not a candidate
+      { title: 'NBA Career Points Leaders', url: DEST },
+      { title: 'NBA all-time points totals', url: AGREEING },
+    ]),
+  });
+  const read = readMap({ [DEST]: leaderboard, [AGREEING]: agreeing });
+  const out = await drive(NBA_Q, [() => textSSE('LeBron James leads with 42,184 points.')], { search, read });
+  const verdicts = out.events.filter((e) => e.type === 'assessment');
+  assert.deepEqual(verdicts.map((e) => e.status), ['supported'], 'supported: one verdict, no repair round');
+  assert.deepEqual(verdicts[0].missing, [], 'supported: nothing is missing');
+  assert.deepEqual(search.seen.map((s) => s.query), [INITIAL], 'supported: no follow-up search');
+  assert.deepEqual(read.seen, [DEST, AGREEING],
+    'supported: the two plan-matching results are read, best first, and the unrelated one is skipped');
+  assert.equal(out.summary.assessment, 'supported', 'supported: the summary carries the verdict');
+  assert.equal(out.summary.plan.kind, 'factual', 'supported: the plan kind rides the summary');
+  assert.equal(out.summary.plan.facts.length, 2, 'supported: both planned facts are in the summary');
+  const users = bridge.historyMessages().filter((m) => m.role === 1).map((m) => m.content);
+  assert.ok(users.some((c) => c.startsWith(`Additional details from the pages read for "${INITIAL}":`)),
+    'supported: the page details reach the conversation as a plain user message');
+  assert.ok(users.some((c) => c.includes('| Player | Points |')), 'supported: the leaderboard table rides the page details');
+  assert.ok(out.calls[0].messages.some((m) => m.role === 'user' && m.content.includes('| Player | Points |')),
+    'supported: the model sees the page details in the first request');
+  console.log('ok  : a page that answers every planned fact ends the research');
+}
+
+// ── 14. partial evidence: one targeted repair completes the answer ──────
+{
+  const NBA_Q = 'who has the most points in nba history? how many points od they have?';
+  const INITIAL = 'NBA all-time career points leaders regular season';
+  const REPAIR = 'NBA points total regular season';
+  const IDENTITY = 'https://www.nba.com/history/scoring-leaders';
+  const TOTALS = 'https://www.statmuse.com/nba/points-leaders';
+  const identityPage = {
+    ok: true, url: IDENTITY, finalUrl: IDENTITY, title: 'NBA all-time scoring',
+    text: 'LeBron James leads the NBA all-time points list.', headings: [], tables: [],
+  };
+  const totalsPage = {
+    ok: true, url: TOTALS, finalUrl: TOTALS, title: 'NBA career points', text: '',
+    headings: [], tables: [{ headers: ['Player', 'Points'], rows: [['LeBron James', '42184']] }],
+  };
+  const search = scriptedSearch({
+    [INITIAL]: serpRecord([{ title: 'NBA all-time scoring', url: IDENTITY }]),
+    [REPAIR]: serpRecord([{ title: 'NBA career points', url: TOTALS }]),
+  });
+  const read = readMap({ [IDENTITY]: identityPage, [TOTALS]: totalsPage });
+  const out = await drive(NBA_Q, [
+    () => textSSE('LeBron James leads the NBA.'),
+    () => textSSE('LeBron James has 42,184 points.'),
+  ], { search, read });
+  const verdicts = out.events.filter((e) => e.type === 'assessment').map((e) => e.status);
+  assert.deepEqual(verdicts, ['partial', 'supported'], 'partial: the repair settles the missing fact');
+  assert.deepEqual(search.seen.map((s) => s.query), [INITIAL, REPAIR], 'partial: exactly one follow-up query');
+  assert.equal(search.seen.filter((s) => s.query === REPAIR).length, 1, 'partial: the follow-up query never repeats');
+  assert.deepEqual(read.seen, [IDENTITY, TOTALS], 'partial: one page read per search round');
+  assert.equal(out.summary.assessment, 'supported', 'partial: the last verdict is supported');
+  const finalList = out.events.filter((e) => e.type === 'sources').at(-1).list;
+  assert.deepEqual(finalList.map((r) => r.origin), ['initial', 'follow-up'],
+    'partial: every record carries the round that discovered it');
+  assert.ok(finalList.every((r) => r.fetchedAt), 'partial: the read pages are marked as fetched');
+  const last = out.calls.at(-1);
+  assert.equal(last.tools, undefined, 'partial: the repair round offers no tools');
+  assert.equal(last.messages.at(-1).content, EVIDENCE_REPAIR_NUDGE, 'partial: the repair nudge is the last message');
+  const assistants = bridge.historyMessages().filter((m) => m.role === 2 && !m.tool_call_id);
+  assert.deepEqual(assistants.map((m) => m.content), ['LeBron James has 42,184 points.'],
+    'partial: the superseded draft is gone from the context');
+  assert.deepEqual(out.seen.finals, ['LeBron James has 42,184 points.'], 'partial: the repaired answer is the final');
+  console.log('ok  : partial evidence triggers exactly one repair cycle');
+}
+
+// ── 15. conflicting totals: bounded repairs, no repeated query ──────────
+{
+  const NBA_Q = 'who has the most points in nba history? how many points od they have?';
+  const INITIAL = 'NBA all-time career points leaders regular season';
+  const A = 'https://www.basketball-reference.com/leaders/pts_career.html';
+  const B = 'https://www.espn.com/nba/history/leaders';
+  const pageWith = (url, title, pts) => ({
+    ok: true, url, finalUrl: url, title, text: '',
+    headings: [], tables: [{ headers: ['Player', 'Points'], rows: [['LeBron James', pts]] }],
+  });
+  const search = scriptedSearch({
+    [INITIAL]: serpRecord([{ title: 'NBA points leaders', url: A }, { title: 'NBA all-time leaders', url: B }]),
+  });
+  const read = readMap({ [A]: pageWith(A, 'NBA leaders', '42184'), [B]: pageWith(B, 'NBA all-time leaders', '40000') });
+  const out = await drive(NBA_Q, [
+    () => textSSE('The sources disagree about the total.'),
+    () => textSSE('The totals still disagree.'),
+  ], { search, read });
+  const verdicts = out.events.filter((e) => e.type === 'assessment').map((e) => e.status);
+  assert.equal(verdicts[0], 'conflicting', 'conflicting: two numbers for one fact');
+  assert.equal(out.summary.assessment, 'conflicting', 'conflicting: the turn settles on the standing verdict');
+  const repairs = search.seen.slice(1).map((s) => s.query);
+  assert.ok(repairs.length <= MAX_REPAIR_CYCLES, `conflicting: at most ${MAX_REPAIR_CYCLES} repair cycles`);
+  assert.equal(new Set(repairs).size, repairs.length, 'conflicting: the same repair query never runs twice');
+  assert.ok(out.summary.rounds <= 1 + MAX_REPAIR_CYCLES, 'conflicting: rounds stay bounded');
+  console.log('ok  : conflicting evidence repairs at most twice and never repeats a query');
 }
 
 console.log('ALL RESEARCH PASS');

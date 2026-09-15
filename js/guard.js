@@ -8,6 +8,14 @@ export const HEDGE_PASS_NUDGE =
   + 'otherwise say what you found and what remains unknown, and do not assert absence from missing evidence. '
   + 'Do not call web_search again — use only evidence already gathered.';
 
+// Tools-less instruction for the evidence repair round: fresh results for the
+// facts the page reads could not settle are already in the conversation.
+export const EVIDENCE_REPAIR_NUDGE =
+  'New web results for the missing facts are in this conversation. '
+  + 'Answer from them. '
+  + 'State plainly which facts remain unverified. '
+  + 'Do not call web_search again.';
+
 // denial phrases — existence / occurrence denials that must be evidence-backed
 const DENIAL_RES = [
   /has not yet been held/i,

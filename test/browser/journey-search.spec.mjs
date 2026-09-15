@@ -365,11 +365,13 @@ test('@search states: a partial search discloses Sources and warns about unreach
   await expect(slot).toContainText(NOTE_UNREACHABLE);
   await expect(slot).not.toContainText(NOTE_NO_SOURCES);
 
-  // The dead Sources really were attempted through the fan-out.
+  // The dead Sources really were attempted through the fan-out. HN is
+  // code-intent-only since intent routing (ADR 0013): a factual question
+  // reaches the general Sources, so assert the sources this question's
+  // fan-out actually schedules.
   const { requests } = await fixture.requests();
   const hosts = new Set(requests.filter(isSearch).map((r) => r.host));
   expect(hosts).toContain('en.wikipedia.org');
-  expect(hosts).toContain('hn.algolia.com');
 
   await expectHermetic(app);
   await expectOnlyDeliberateProblems(app);

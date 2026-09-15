@@ -187,6 +187,31 @@ _Avoid_: scoring, sorting, ordering
 The single forced tools-less rewrite inserted after a natural round-final when `hedgeNeeded(answer, evidence)` is true — the answer contains existence-denial phrasing (`there is no|does not exist|no such`) and Tool-result evidence is empty or lacks the denied subject. The Bridge re-invokes the model once with `HEDGE_PASS_NUDGE` (honest-uncertainty rewrite instruction, reusing `BUDGET_NUDGE` plumbing) and replaces the final text; at most one per Turn.
 _Avoid_: hedge retry, denial fix, second pass
 
+**Plan**:
+The application-derived statement of what a Turn needs, built before any byte leaves the browser: the task kind, public entities, requested metrics and units, temporal requirement, statistical scope, each distinct requested fact, and the initial search query.
+_Avoid_: intent, task plan, query plan
+
+**Auto Read**:
+The application-controlled reading of the top relevant candidates after a search, independent of whether the model requests a page-read tool.
+_Avoid_: page reader, fetch tool, scraping
+
+**Sufficiency Check**:
+The per-fact verdict over gathered evidence for a factual Turn: `supported`, `partial`, `conflicting`, or `unavailable`. A completed search is not a completed answer.
+_Avoid_: verification, fact check
+
+**Repair Cycle**:
+One bounded follow-up search plus page read plus one tools-less model round for the facts the evidence left missing. At most two per Turn, and a repeated query or a no-progress cycle stops the loop.
+_Avoid_: retry, second pass, repair loop
+
+**Source Registry**:
+The per-Turn record of everything the Turn touched: discovery, follow-ups, and read pages, each with a stable id, canonical URL, provenance, retrieval status, and the evidence it supports. Failed or irrelevant candidates are recorded, never counted as supporting sources.
+_Avoid_: source cache, drawer data
+
+**Runtime Clock**:
+The sampled device clock (UTC, local date and time in the browser's IANA zone, offset, honest fallback markers) carried in every model request's system context and never stored in chat history.
+_Avoid_: system time, clock tool, device time injection
+
+
 **Search Proxy**:
 Optional Worker route `GET /api/search?url=` (and `/api/arxiv?q=`) that forwards a CORS-blocked open source (e.g., arXiv Atom) through the same Worker that holds the Operator Key, adds `access-control-allow-origin: *`, and translates to JSON. Free, no key, only for sources that already pass the rest of the Inclusion Checklist.
 _Avoid_: cors proxy, gateway

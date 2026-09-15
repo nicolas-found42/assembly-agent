@@ -33,6 +33,36 @@
       "run": "node-test"
     },
     {
+      "path": "test/plan.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/clock.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/registry.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/evidence.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/search-read.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
       "path": "test/store.test.mjs",
       "kind": "test",
       "class": "offline",

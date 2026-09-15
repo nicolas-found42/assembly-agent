@@ -10,9 +10,17 @@ answer.
   voice. A library holds custom assistants that you can create, edit, duplicate,
   delete, import, and export.
 - **Research first** — every request runs a fresh web search before any model
-  call, for every assistant. A keyless fan-out of 28 sources feeds the answer.
-  Search states are honest: the answer footer says when sources were unreachable
-  or when the search was not available.
+  call, for every assistant. A deterministic planner (`js/research.js`) states
+  what the question needs (entities, metrics, scope, dates) and picks the
+  query. A keyless fan-out of 28 sources routes by task, the top relevant
+  result pages are read automatically (via the keyless Jina Reader when the
+  browser cannot read them directly), and the answer is checked against the
+  evidence before it settles. Search states are honest: the answer footer says
+  when sources were unreachable or when the search was not available.
+- **Current time on every request** — the application samples the device clock
+  (UTC, local date and time in the browser's own timezone, offset) at each
+  model request and supplies it as system context. It is never stored in chat
+  history, and the limitation is honest: the clock is the device's clock.
 - **Wording check** — answers from the built-in assistant pass mechanical
   ASD-STE100-style checks. A violation can trigger one corrective rewrite. The
   rewrite must keep every link, code block, number, and quotation. A failed
@@ -62,14 +70,19 @@ installs the pinned WABT release with a verified checksum, and a system WABT
   size is capped at 256 KB. Custom instructions cannot turn the web search off.
 - **Fresh research per request** — a deterministic planner (`js/research.js`)
   builds each search query from local code only, before any bytes leave the
-  browser. A greeting gets a harmless generic query. "Continue" or "make it
-  shorter" derives its topic from earlier user messages. Private writing and
-  translation material never reaches a search. Credentials, email addresses, and
-  long quoted spans are stripped at every search boundary. The first lookup runs
-  before the first model call and bypasses the session caches.
+  browser. The planner keeps the meaning of the question: comparisons, negation,
+  units, statistical scope, explicit dates, and each distinct requested fact
+  survive into the query. A greeting gets a harmless generic query. "Continue"
+  or "make it shorter" derives its topic from earlier user messages. Private
+  writing and translation material never reaches a search. Credentials, email
+  addresses, and long quoted spans are stripped at every search boundary,
+  including model-generated and automatic follow-up queries. The first lookup
+  runs before the first model call and bypasses the session caches.
 - **Search budget** — at most 5 research rounds per request, including the first
-  mandatory one. When the budget is spent, one final tools-disabled pass forces
-  an answer from the results already in the conversation.
+  mandatory one; automatic page reads cap at 6 per turn; at most 2 bounded
+  repair cycles chase the facts the evidence left missing. When the budget is
+  spent, one final tools-disabled pass forces an answer from the results
+  already in the conversation.
 - **Honest search states** — a failed source does not block the answer. The
   footer shows "Some sources were unreachable." or "Web search was not available
   for this answer." when those states occur.
@@ -108,14 +121,17 @@ index.html          # chat shell: header, transcript, composer, status line
 styles.css          # amber phosphor theme, scanlines/vignette/flicker
 js/
   main.js           # boot, turn loop, dialogs, transcript rendering
-  bridge.js         # WASM instantiate + turn pipeline (research, rounds, wording pass)
-  research.js       # deterministic query planning + privacy minimization
-  search.js         # parallel keyless source fan-out
+  bridge.js         # WASM instantiate + turn pipeline (research, reads, sufficiency, wording pass)
+  research.js       # deterministic task planning + query semantics + privacy minimization
+  search.js         # parallel keyless source fan-out, routing, page reads
   models.js         # catalog fetch + TLV + sort/filter + newest-free query
   store.js          # v2 persistence: assistants, chats, settings, keys, migration
   persona.js        # built-in assistant instructions + policy preamble
   ste.js            # ASD-STE100-style prose checks + rewrite integrity gate
-  guard.js          # hedge pass, budget nudge, tool-argument repair
+  guard.js          # hedge pass, repair nudge, budget nudge, tool-argument repair
+  evidence.js       # per-fact evidence assessment + repair queries
+  sources.js        # per-turn source registry (ids, provenance, status)
+  clock.js          # sampled device-clock context for model requests
   markdown.js       # marked + DOMPurify + highlight.js
   a11y.js           # status announcements
 src/agent.wat       # hand-written engine (SSE scanner, history arena, catalog)
@@ -163,6 +179,31 @@ served by `test/browser/fixture-server.mjs`, so it needs no key and no network; 
 two local servers use ports 4319/4320 (`SITE_PORT`/`FIXTURE_PORT` override them).
 The old manual `test/a11y.browser.mjs` harness is superseded — it sits in the
 `live` class and never enters the required gate.
+
+### Research regression and live checks
+
+The research pipeline has a standing regression for its motivating failure —
+the typo-containing sports-records question that used to plan a mangled query,
+route to a scoreboard, and settle on a stale milestone:
+
+```bash
+node --test test/research.test.mjs          # planner semantics, clock freshness, bounded repair
+node --test test/plan.test.mjs test/evidence.test.mjs test/registry.test.mjs test/clock.test.mjs
+```
+
+The browser journey runs the same question against the staged site with
+fixtures: `npx playwright test --config test/browser/playwright.config.mjs
+journey-evidence.spec.mjs`. A bounded live check of real factual questions
+rides the real keyless providers and the real proxy:
+
+```bash
+npm run serve &            # READY http://127.0.0.1:<port>/assembly-agent/
+node scripts/live-smoke.mjs http://127.0.0.1:<port>/assembly-agent/
+```
+
+Provider verification dates and live observations live in
+`docs/research/web-search-live-free-2026-09-15.md`; the pipeline decision is
+ADR 0015.
 
 ### Reproducing a CI failure
 
