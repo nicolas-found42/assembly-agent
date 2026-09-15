@@ -6,3 +6,11 @@ dist/
 local/
 prototypes/
 prototype/
+
+# CI campaign build/test outputs
+node_modules/
+_site/
+artifacts/
+test-results/
+playwright-report/
+blob-report/
