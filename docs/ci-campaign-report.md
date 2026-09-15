@@ -154,8 +154,9 @@ here on. `worker-deploy.yml` remains a deliberate no-op until its owner
 prerequisites exist (§7).
 
 **Deployed-site smoke against production (local runs, coordinator, before and after the merge):**
-before — `node scripts/live-health.mjs --mode health --expect-commit 332ed511…
---base-url https://nicolas-found42.github.io/assembly-agent/` ⇒ exit 10,
+before — `node scripts/live-health.mjs --mode health --expect-commit
+332ed511e3fbecce22d89032cc4b9ec9fc499339 --base-url
+https://nicolas-found42.github.io/assembly-agent/` ⇒ exit 10,
 classification `deployment`: `site.build-info` 404 `[site.build-info-missing]`
 and `site.vendor.{marked,purify,highlight}` / `site.font` 404
 `[site.asset-missing]`, while `site.base`, `site.entry`, `site.wasm`
@@ -163,10 +164,15 @@ and `site.vendor.{marked,purify,highlight}` / `site.font` 404
 (200 `{"ok":true,"freeOnly":true}`), `worker.free-only-boundary` (403) and
 `catalog.shape` (446 models, 20 free) passed — the live tree was still the
 pre-campaign artifact published by the retired `deploy.yml`.
-After the merge, the same command with `--expect-commit 4e6b272…` returns
+After the merge, the same command with the merge commit's full SHA —
+`--expect-commit 4e6b272bed071b5b345049e0823a18ea9946587a` — returns
 **exit 0**: every check passes, including `site.vendor.*`, `site.font` and
-`site.build-info` ("commit `4e6b272…`; wasm digest matches served bytes"), so the
-campaign publication now satisfies the vendor/font/build-info contract.
+`site.build-info` ("commit `4e6b272bed…`; wasm digest matches served bytes"), so
+the campaign publication now satisfies the vendor/font/build-info contract. The
+comparison is an exact string match (`live-health.mjs`:
+`parsed.commit === args.expectCommit`), so an abbreviated SHA is reported as
+`[site.stale-artifact]` even against a correct deployment, and the check reads
+the commit that is live *now* — it is meaningful only against the current tip.
 
 ## 5. Local verification
 
