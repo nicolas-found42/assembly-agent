@@ -281,7 +281,15 @@ Residual risks:
   implementation. vitest stays on `^4.1.0` until the pool publishes vitest 5
   support, or until the worker class is moved onto a different workerd harness —
   a change that would give up the pool's current-runtime property and is not part
-  of this campaign.
+  of this campaign. The two interfaces that would have to change besides the
+  peers were checked rather than assumed: `scripts/run-tests.mjs` gates on the
+  reporter's `Tests  N passed (N)` block, and vitest 5.0.0 emits that block
+  unchanged for the same suite (identical counts, `disableConsoleIntercept` still
+  honoured; only the `Duration` breakdown's wording differs, which the runner
+  never reads), and the worker suite touches none of the APIs vitest 5 removes or
+  tightens — its imports are exactly `describe`/`test`/`expect`/`beforeEach` plus
+  `cloudflare:test`. So the deferral is a peer-range wait, not a harness
+  migration.
 - Remote `img`/`video`/`audio` sources and the inline `style` attribute remain
   allowed after sanitization (the inline attribute can still name a remote
   `url()`); forbidding inline styles is a broader content decision and was not
