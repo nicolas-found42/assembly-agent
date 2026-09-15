@@ -1,9 +1,9 @@
 # CI campaign completion report
 
 Date: 2026-09-15
-Branch: `ci/campaign` @ `9313d413c3c1f04ec72d69acec18d407d82cd03e`
+Branch: `ci/campaign` @ `950422c0baef7ea91400858c04bd8b67ae11311b`
 Base: `main` @ `332ed511e3fbecce22d89032cc4b9ec9fc499339`
-PR: [#47](https://github.com/nicolas-found42/assembly-agent/pull/47) (head `9313d41…`, merge ref `bb2fed029f14f755c88157b8bc14b105970a3cd8`)
+PR: [#47](https://github.com/nicolas-found42/assembly-agent/pull/47) (head `950422c…`, merge ref of the last green run: `pull_request` on `950422c`)
 
 This report answers §16 of the implementation brief. Status words mean exactly
 this: **implemented + verified** (the code exists and both local verification and
@@ -14,7 +14,8 @@ publication, deployment or setting that was not observed.
 
 ## 1. Identity and change summary
 
-Seven commits on top of `332ed51`:
+Thirteen commits on top of `332ed51` — the seven the campaign was built with,
+then six that close the review findings:
 
 | Commit | Subject |
 | --- | --- |
@@ -25,9 +26,15 @@ Seven commits on top of `332ed51`:
 | `308b9ff` | the last two linux dialog baselines are now runner-rendered |
 | `ab3e555` | close the two CodeQL findings in the campaign's own code |
 | `9313d41` | a timeout that sweeps its children, and a budget that counts the request it sent |
+| `681f1b0` | prove the gate's own guards with committed tests |
+| `c63f5b2` | worker: one stable message for an upstream fetch failure |
+| `3c1b5cf` | map the documented live-health budget variables into the workflow |
+| `2ce1e90` | analyse the repository's own shell scripts with shellcheck |
+| `7841592` | report the campaign's verified state, and make the activation surface honest |
+| `950422c` | keep the sentinel out of the source, so retained copies cannot trip the scan |
 
-Diff against `main`: 106 files, 89 added, 16 modified, 1 deleted
-(`.github/workflows/deploy.yml`), +18,396/−82 lines. Grouped:
+Diff against `main`: 120 files, 102 added, 17 modified, 1 deleted
+(`.github/workflows/deploy.yml`), +19,883/−83 lines. Grouped:
 
 - **Required gate and test classification** — `scripts/verify.mjs` (the one gate
   command, 11 named steps), `scripts/run-tests.mjs`, `scripts/validate-manifest.mjs`,
@@ -107,11 +114,18 @@ committed test that fails if the guard is deleted or weakened.
 
 | Run | Event / ref | Result |
 | --- | --- | --- |
+| [CI 34986386666](https://github.com/nicolas-found42/assembly-agent/actions/runs/34986386666) | `pull_request`, head `950422c` | `build-and-test` **success** 3m18s — the full 11-step gate on `ubuntu-24.04`: `RUNNER offline PASS (17/17)`, worker, `RUNNER browser PASS`, `LINT PASS (8/8)`, `SENTINEL OK`, and `INVENTORY OK` twice (once inside the gate, once as the promotion guard) at `tree sha256:5cd3f54f…`; `deploy` + `Deployed-site smoke` skipped (push-to-main only) |
+| [CodeQL 34986386674](https://github.com/nicolas-found42/assembly-agent/actions/runs/34986386674) | `pull_request`, head `950422c` | both analyses **success** |
+| [CI 34984924887](https://github.com/nicolas-found42/assembly-agent/actions/runs/34984924887) | `pull_request`, head `7841592` | **failure at step 11** — sentinel: 10 of 11 steps green; the retained Playwright JSON report carries a review tool's embedded `git diff`, and a document quoting the sentinel literal was inside it. Fixed at the root by `950422c` (§6) |
 | [CI 34970772333](https://github.com/nicolas-found42/assembly-agent/actions/runs/34970772333) | `pull_request`, head `9313d41`, merge `bb2fed0` | `build-and-test` **success** 12:45:47→12:48:31 (2m44s); `deploy` and `Deployed-site smoke` **skipped** (push-to-main only; nothing was published) |
 | [CodeQL 34970772349](https://github.com/nicolas-found42/assembly-agent/actions/runs/34970772349) | `pull_request`, head `9313d41` | `analyze (javascript-typescript)` and `analyze (actions)` **success** |
 | [CI 34926838166](https://github.com/nicolas-found42/assembly-agent/actions/runs/34926838166) | `pull_request`, `9b2ef79` | **failure at step 9** — worker class: no parseable vitest summary plus workerd uncaught `simulated connection reset`; browser 7 failing |
 | [CI 34927815616](https://github.com/nicolas-found42/assembly-agent/actions/runs/34927815616) | `pull_request`, `b8bc581` | **failure at step 9** — visual baseline mismatch (`toHaveScreenshot(expected) failed`) |
 | [CI 34929670917](https://github.com/nicolas-found42/assembly-agent/actions/runs/34929670917) | `pull_request`, `46974a3` | **failure at step 9** — dialogs baseline mismatch; fixed by runner-rendered baselines (`308b9ff`) |
+
+Ten of the last eleven hosted runs are green; the four red ones each failed *inside*
+the required gate and each produced a fix, so the gate is demonstrated to fail
+closed on a runner rather than only locally.
 
 `cross-browser.yml`, `live-health.yml` and `worker-deploy.yml` **have never run**
 and cannot run from this branch: GitHub resolves workflow files from the default
