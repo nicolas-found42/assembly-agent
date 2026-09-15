@@ -14,6 +14,17 @@
 // does not exist is "nothing to scan", not a failure — a developer machine may
 // not have run the suite yet, and CI has no `test-results/` on a green run.
 //
+// One finding is expected rather than pathological: a *failing* browser run
+// retains its traces and error contexts under `test-results/`, and Playwright
+// writes the failing spec's own source into the trace — including the sentinel
+// literal `test/browser/leak.spec.mjs` declares by design. A red browser class
+// can therefore add a sentinel finding that quotes the spec instead of leaking
+// anything. It is reported, not filtered: the literal really is retained, the
+// class summary is written before this scan runs, and that class is already red,
+// so the line states a cause rather than creating one. Retained traces outlive
+// the run that wrote them, so a finding labelled with a trace on an otherwise
+// green tree means the artifact belongs to an earlier failing run.
+//
 // ZIP archives (`.zip`, which is what a Playwright trace is) are opened with
 // Node built-ins only: the end-of-central-directory record, the central
 // directory, and each member — `zlib.inflateRawSync` for deflate (method 8),

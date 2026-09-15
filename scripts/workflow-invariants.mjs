@@ -20,21 +20,35 @@
  *                             appears in a workflow reachable from pull_request / merge_group /
  *                             workflow_run — which is also the Dependabot path.
  *   7. required-context       exactly one job reports the required check context
- *                             `build-and-test` (job id, no `name:` override), and the required
- *                             workflow has no workflow-level `paths`/`paths-ignore` filter.
+  *                             `build-and-test` (job id, no `name:` override), the required
+  *                             workflow has no workflow-level `paths`/`paths-ignore` filter,
+  *                             and the job itself is unconditional — a skipped required job
+  *                             still reports success.
  *   8. concurrency            the required job's effective concurrency is PR-scoped and cancels
  *                             superseded PR runs; a publishing job's effective concurrency can
  *                             never cancel an active publish, and no workflow-level
  *                             `cancel-in-progress: true` covers a publishing job.
  *   9. no-continue-on-error   the workflow reporting the required check never uses
  *                             `continue-on-error`.
+  *  10. pages-publication      a job that publishes with `actions/deploy-pages` never checks out
+  *                             the repository and never runs a build/install command (the
+  *                             verified artifact is its only input), and the publish step is
+  *                             gated on a freshness decision computed in that same job: a step
+  *                             writing both `fresh=true` and `fresh=false` to $GITHUB_OUTPUT,
+  *                             which `actions/deploy-pages` must require.
+  *  11. no-snapshot-autorefresh no workflow `run:` block passes Playwright's snapshot-update
+  *                             flag (long or short form), and the browser config never sets
+  *                             `updateSnapshots` to anything but an explicit 'missing' — CI must
+  *                             never accept the baselines it compares against.
  *
  * NOT PROVEN HERE — a PASS is not evidence for any of these, they need a real run:
- *   GitHub event scheduling and trigger evaluation; runtime enforcement of the `permissions`
+  *   GitHub event scheduling and trigger evaluation (GitHub's own expression engine, not the
+  *   local evaluator in test/ci-guards.test.mjs); runtime enforcement of the `permissions`
  *   block; environment protection rules and deployment-branch policies (repo settings, see
  *   .scratch/ci/research/pins.md §9); artifact identity/immutability and digests; secret
  *   availability and scoping for forks/Dependabot; the behaviour of action code; and whether a
- *   required check actually gates a merge.
+  *   required check actually gates a merge. The freshness step's no-op and fail-closed
+  *   behaviour under a chosen tip is executed by test/ci-guards.test.mjs, not proven here.
  *
  * Usage: node scripts/workflow-invariants.mjs [--workflows <dir>] [--help]
  *   --workflows <dir>  directory of workflow files (default .github/workflows); the negative
@@ -342,6 +356,19 @@ if (requiredJob) {
   }
 }
 
+// 7c. the required job must be unconditional -------------------------------------
+// A condition on the job that reports the required check is a hole in the gate: a
+// skipped job reports success, so a run that executes nothing can still satisfy branch
+// protection. Whatever a condition should express belongs inside the steps.
+if (requiredJob) {
+  const g = asString(requiredJob.job.if).trim();
+  if (g !== '') {
+    addProblem('required-job-ungated', `${requiredJob.wf.file}  job '${requiredJob.jobId}' declares \`if: ${g}\` — a skipped required job still reports success; keep the job unconditional and gate its steps instead`);
+  } else {
+    addNote('required-job-ungated', `${requiredJob.wf.file}  job '${requiredJob.jobId}' is unconditional`);
+  }
+}
+
 // 8. concurrency -----------------------------------------------------------------
 // "Effective" concurrency is the job's own key when it declares one, otherwise the
 // workflow-level key, which applies to every job that does not override it.
@@ -436,6 +463,99 @@ if (requiredJob) {
   for (const wf of workflows) scan(wf, true);
 }
 
+// ---------------------------- 10. the Pages publication path ---------------------
+// `actions/deploy-pages` uploads the artifact `build-and-test` produced, so the job
+// around it must neither check out the repository nor build anything: a fresh tree or a
+// fresh build would publish bytes no test ever saw. The publish step must also be gated
+// on a freshness decision computed in that same job — a comment claiming a guard is not
+// a guard, and an unconditional publish cannot be superseded safely.
+const BUILD_COMMAND_RE = /\bnpm\s+(?:ci|install)\b|\bnpm\s+run\s+(?:build|verify)\b|\bbuild-site\.sh\b|\bnode\s+scripts\/build/;
+for (const wf of workflows) {
+  for (const { id: jobId, job } of wf.jobs) {
+    const where = `${wf.file}  job '${jobId}'`;
+    const steps = Array.isArray(job.steps) ? job.steps : [];
+    const publishing = steps.filter((s) => /^actions\/deploy-pages@/.test(asString(s?.uses)));
+    if (publishing.length === 0) continue;
+
+    steps.forEach((step, i) => {
+      const uses = asString(step?.uses);
+      const label = `${where}  step ${i + 1} '${asString(step?.name) || uses || '(unnamed)'}'`;
+      if (/^actions\/checkout@/.test(uses)) {
+        addProblem('publish-no-rebuild', `${label}  checks out the repository inside a publishing job; the published bytes must be the verified artifact, never a fresh tree`);
+      }
+      const build = BUILD_COMMAND_RE.exec(asString(step?.run));
+      if (build) {
+        addProblem('publish-no-rebuild', `${label}  runs '${build[0].trim()}' inside a publishing job; nothing may build or install after the artifact was verified`);
+      }
+    });
+
+    const freshness = steps.find((s) => {
+      const run = asString(s?.run);
+      return asString(s?.id) !== '' && run.includes('fresh=true') && run.includes('fresh=false');
+    });
+    const freshnessId = freshness ? asString(freshness.id) : null;
+    if (!freshnessId) {
+      addProblem('publish-freshness-gate', `${where}  publishes a Pages artifact but no step with an id writes both \`fresh=true\` and \`fresh=false\` to $GITHUB_OUTPUT; whether this run still owns main must be a decision, not an assumption`);
+    }
+    const requiresFresh = freshnessId ? new RegExp(`\\b${freshnessId}\\.outputs\\.fresh\\s*==\\s*'true'`) : null;
+    for (const step of publishing) {
+      const g = asString(step.if);
+      if (!requiresFresh || !requiresFresh.test(g)) {
+        addProblem('publish-freshness-gate', `${where}  step '${asString(step.name)}' publishes with \`if: ${g || '(none)'}\`; it must require ${freshnessId ? `steps.${freshnessId}.outputs.fresh == 'true'` : 'the freshness decision the job computes'}`);
+      }
+    }
+  }
+}
+
+// ---------------------------- 11. no snapshot auto-accept ------------------------
+// The visual baselines are the evidence that the UI did not change, so a run that can
+// rewrite them turns a regression into a fresh baseline. CI must never pass Playwright's
+// snapshot-update flag, and the browser config must not enable it by configuration.
+// Narrow on purpose: `run:` blocks plus the one config value — no browser is started.
+{
+  const id = 'no-snapshot-autorefresh';
+  const updateFlags = [
+    { label: '--update-snapshots', re: /--update-snapshots\b/ },
+    { label: "'-u' (--update-snapshots shorthand)", re: /(?:^|[\s"'=])-u(?:[\s"']|$)/m },
+  ];
+  let runs = 0;
+  for (const wf of workflows) {
+    for (const { id: jobId, job } of wf.jobs) {
+      const steps = Array.isArray(job.steps) ? job.steps : [];
+      steps.forEach((step, i) => {
+        const text = asString(step?.run);
+        if (text === '') return;
+        runs += 1;
+        for (const { label, re } of updateFlags) {
+          if (re.test(text)) {
+            addProblem(id, `${wf.file}  job '${jobId}'  step ${i + 1} '${asString(step?.name) || '(unnamed)'}'  run: block contains ${label}; CI must never accept the snapshots it compares against`);
+          }
+        }
+      });
+    }
+  }
+
+  const configFile = 'test/browser/playwright.config.mjs';
+  const configPath = path.join(ROOT, configFile);
+  if (!statSync(configPath, { throwIfNoEntry: false })?.isFile()) {
+    addProblem(id, `${configFile}  not found; the snapshot policy of the browser suite cannot be checked`);
+  } else {
+    const declared = /updateSnapshots\s*:\s*([^\n]+)/.exec(readFileSync(configPath, 'utf8'));
+    if (declared) {
+      const shown = declared[1].split('//')[0].trim();
+      const value = shown.replace(/^["']|["']$/g, '');
+      if (value !== 'missing') {
+        addProblem(id, `${configFile}  updateSnapshots: ${shown} — only an explicit 'missing' is allowed; 'all'/'changed' auto-accept the baselines, and 'none' or a computed value hides the decision from this scan`);
+      } else {
+        addNote(id, `${configFile}  updateSnapshots: 'missing'`);
+      }
+    } else {
+      addNote(id, `${configFile}  updateSnapshots unset (Playwright writes missing baselines only, never rewrites existing ones)`);
+    }
+  }
+  addNote(id, `${runs} run: block(s) and ${configFile} scanned`);
+}
+
 // ------------------------------------------------------------------ report
 const checks = [
   ['uses-pinned', 'every external action is a full-SHA pin with a version comment'],
@@ -445,8 +565,12 @@ const checks = [
   ['publication-gate', 'publication gated to refs/heads/main and a named environment'],
   ['no-prod-secrets-in-pr', 'no production secret in a pull_request/merge_group/workflow_run path'],
   ['required-context', `required check context is exactly '${REQUIRED_CONTEXT}', with no paths filter`],
+  ['required-job-ungated', 'the required check is reported by an unconditional job'],
   ['concurrency', 'PR runs cancel superseded runs; publishing is never cancelled'],
   ['no-continue-on-error', 'no continue-on-error where the required check is reported'],
+  ['publish-no-rebuild', 'a Pages publication never checks out or rebuilds the verified artifact'],
+  ['publish-freshness-gate', 'a Pages publication is gated on the freshness decision its own job computes'],
+  ['no-snapshot-autorefresh', 'no run: block and no browser config can accept Playwright snapshots'],
 ];
 
 console.log(`WORKFLOW INVARIANTS — ${files.length} workflow file(s), ${contexts.length} job(s), dir ${path.relative(process.cwd(), args.workflows) || args.workflows}`);
@@ -471,12 +595,14 @@ if (parseFailures.length > 0) {
 
 console.log(`
   PROVEN STATICALLY: pins, job timeouts, permission shape, publication trigger/ref gating,
-  secret references, the required check context, concurrency keys and continue-on-error —
+    secret references, the required check context and its unconditional job, the Pages publish
+    path (no checkout, no rebuild, gated on the freshness decision the job computes), concurrency
+    keys, continue-on-error, and the absence of any snapshot auto-accept flag or config value —
   read from these files only.
-  NOT PROVEN (needs a real run): event scheduling and trigger evaluation, runtime permission
-  enforcement, environment protection rules, artifact identity/immutability, secret
-  availability for forks and Dependabot, action behaviour, and whether the required check
-  actually blocks a merge.`);
+    NOT PROVEN (needs a real run): event scheduling and trigger evaluation (GitHub's expression
+    engine, not the evaluator in test/ci-guards.test.mjs), runtime permission enforcement,
+    environment protection rules, artifact identity/immutability, secret availability for forks
+    and Dependabot, action behaviour, and whether the required check actually blocks a merge.`);
 
 const okAll = problems.length === 0 && parseFailures.length === 0;
 console.log(`\nWORKFLOW INVARIANTS ${okAll ? 'PASS' : 'FAIL'} (${passed}/${checks.length} checks, ${problems.length} finding(s)${parseFailures.length ? `, ${parseFailures.length} parse failure(s)` : ''})`);

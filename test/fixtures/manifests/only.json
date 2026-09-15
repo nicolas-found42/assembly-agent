@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "path": "test/fixtures/manifests/only.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    }
+  ]
+}

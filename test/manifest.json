@@ -93,6 +93,24 @@
       "run": "node-test"
     },
     {
+      "path": "test/ci-guards.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/live-health-budget.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/ci-failures.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
       "path": "test/a11y.browser.mjs",
       "kind": "test",
       "class": "live",
