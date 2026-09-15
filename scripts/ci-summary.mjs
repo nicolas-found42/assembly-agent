@@ -405,7 +405,11 @@ function render(model) {
   const { event, findings } = model;
   const lines = [];
   const push = (...items) => lines.push(...items);
-  const cell = (v) => (v === null || v === undefined || v === '' ? '—' : String(v).replace(/\|/g, '\\|'));
+  // Markdown table cell: escape the delimiter and the backslash first, or an
+  // input ending in a backslash would swallow the escape we add after it.
+  const cell = (v) => (v === null || v === undefined || v === ''
+    ? '—'
+    : String(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|'));
 
   const heading = event.event ? `${cell(event.event)} ${cell(shortSha(event.sha))}` : 'local run (no GitHub context)';
   push(`## Verification summary — ${heading}`, '');

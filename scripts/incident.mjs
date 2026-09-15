@@ -43,7 +43,11 @@ export function sanitizeUntrusted(value) {
   if (value === undefined || value === null) return '';
   let text = String(value);
   text = text.replace(/[\u0000-\u001f\u007f]+/g, ' '); // newlines, tabs, CR, NUL, DEL
-  text = text.replace(/<!--|-->/g, ' ');
+  // Every comment delimiter at once: `<!--`, the long form `--!>`, and `-->`
+  // (the classic opener/closer pair). A filter that knows only `-->` lets
+  // `--!>` through, and that is exactly the token an HTML-comment context
+  // treats as a terminator.
+  text = text.replace(/<!--|--!?>|--/g, ' ');
   text = text.replace(/::/g, ':');
   text = text.replace(/`/g, "'");
   text = text.replace(/\s+/g, ' ').trim();
