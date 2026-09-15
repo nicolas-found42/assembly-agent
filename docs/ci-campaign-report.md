@@ -131,12 +131,14 @@ committed test that fails if the guard is deleted or weakened.
 | [CI 34927815616](https://github.com/nicolas-found42/assembly-agent/actions/runs/34927815616) | `pull_request`, `b8bc581` | **failure at step 9** — visual baseline mismatch (`toHaveScreenshot(expected) failed`) |
 | [CI 34929670917](https://github.com/nicolas-found42/assembly-agent/actions/runs/34929670917) | `pull_request`, `46974a3` | **failure at step 9** — dialogs baseline mismatch; fixed by runner-rendered baselines (`308b9ff`) |
 
-Ten of the last eleven *workflow* runs are green (Dependabot's own update jobs are
-not workflow runs and are excluded). Five red runs are recorded above, and each
-one failed *inside* the required gate or its install step rather than in a side
-channel: four produced a fix, and the fifth is the gate refusing a dependency tree
-it cannot install (`#49`, §6) — so the gate is demonstrated to fail closed on a
-runner rather than only locally.
+Ten of the last eleven runs of *this repository's* workflows (CI, CodeQL,
+Cross-browser, Live health) are green. Dependabot's internal update jobs arrive as
+`dynamic` events rather than repository workflows and are not counted — including
+them would make the same window nine of eleven. Five red runs are recorded above,
+and each one failed *inside* the required gate or its install step rather than in
+a side channel: four produced a fix, and the fifth is the gate refusing a
+dependency tree it cannot install (`#49`, §6) — so the gate is demonstrated to
+fail closed on a runner rather than only locally.
 
 `cross-browser.yml` and `live-health.yml` could not run before the merge: GitHub
 resolves workflow files from the default branch, so
@@ -246,7 +248,14 @@ through the dev-only `@cloudflare/vitest-pool-workers` → `miniflare` → `shar
 chain (and `wrangler`); owner `@nicolas-found42`, `reviewBy: 2026-12-14`. Audit
 policy: 0 critical, 0 moderate/low, 4 high findings — all four the same advisory
 on that one chain; registry failure is reported as an unavailable scan, never as
-"0 vulnerabilities".
+"0 vulnerabilities". The same chain defeats the updater, not only the audit:
+Dependabot's security-update job for that alert exits 1 with *"A patched version
+exists for sharp, but the available update path still resolves it to 0.33.5"*
+(`top_level_ancestor: @cloudflare/vitest-pool-workers`, run
+[34989513002](https://github.com/nicolas-found42/assembly-agent/actions/runs/34989513002)),
+so no update PR exists to merge and the alert stays open until `miniflare` (via
+the pool) moves to a patched `sharp` — which is exactly what the dated exception
+is for, and why it is re-reviewed by 2026-12-14 rather than assumed transient.
 
 Known flakes: none observed — the browser config runs with `retries: 0`, and
 repeat runs were green. The linux visual baselines were originally rendered in
@@ -305,7 +314,7 @@ All of these are repository/Cloudflare settings, not code. The tool of record is
 | Setting | Prerequisite | Verification | Rollback |
 | --- | --- | --- | --- |
 | Actions: require full-length SHA pinning | **applied** (`--apply` during this change set; every external `uses:` was already a full SHA) | `bash scripts/settings-apply.sh --check` exits 0; `actions: … sha_pinning_required=true` | `gh api -X PUT repos/{owner}/{repo}/actions/permissions -F enabled=true -f allowed_actions=all -F sha_pinning_required=false` |
-| Dependabot alerts + security updates | **applied** (`vulnerability-alerts` first — security updates 422 without it — then `automated-security-fixes`) | dry run prints `ok Dependabot security updates are on`; `dependabot/alerts?state=open` returns none | `gh api -X DELETE repos/{owner}/{repo}/automated-security-fixes` (and `-X DELETE .../vulnerability-alerts`) |
+| Dependabot alerts + security updates | **applied** (`vulnerability-alerts` first — security updates 422 without it — then `automated-security-fixes`) | dry run prints `ok Dependabot security updates are on`; `dependabot/alerts?state=open` returns **one** open alert — `sharp` (high, `GHSA-rgj7-g3m4-5g8c` through the dev-only `@cloudflare/vitest-pool-workers` chain) created 2026-09-15T15:35:47Z, seconds after the merge and therefore after this report's first draft; it is the finding §6 carries a dated exception for, and no security-update PR can carry the fix (§6) | `gh api -X DELETE repos/{owner}/{repo}/automated-security-fixes` (and `-X DELETE .../vulnerability-alerts`) |
 | Code scanning publisher | keep account-level *default setup* off while `codeql.yml` is the publisher | dry run prints `code scanning default setup: not-configured` ok | delete `codeql.yml` **or** enable default setup, never both |
 | `cloudflare-worker` environment | **created and protected**: `main`-only branch policy + required reviewer (`nicolas-found42`) | dry run prints `ok protected environment 'cloudflare-worker' exists` and then names each missing secret | `gh api -X DELETE repos/{owner}/{repo}/environments/cloudflare-worker` |
 | `CLOUDFLARE_API_TOKEN` (Workers Scripts: edit) + `CLOUDFLARE_ACCOUNT_ID` (environment secrets on `cloudflare-worker`) | **pending** — needs the account that owns the Worker; never paste a value into chat, a workflow or an artifact | dry run stops printing `PENDING environment secret …` | delete the environment secrets |
