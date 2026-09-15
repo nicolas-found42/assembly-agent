@@ -44,9 +44,12 @@ const textSSE = (text) => sse([
 ]);
 
 // ── the search seam: adapters handed to runTurn() instead of fetch fakes ──
-// Contract (js/bridge.js opts.search): async search(query, { fresh }) returns
-// the SAME record the Fan-out builds — { markdown, sources, failures, perSource }.
-// The initial lookup carries { fresh: true }; failures ride the failures field.
+// Contract (js/bridge.js opts.search): async search(query, { fresh, plan })
+// returns the SAME record the Fan-out builds — { markdown, sources, failures,
+// perSource }. The initial lookup carries { fresh: true, plan } (the plan
+// routes the Fan-out); failures ride the failures field.
+// The page-read seam (opts.read) is separate: these tests are search-only, so
+// every read fails cleanly instead of reaching the network.
 const STUB_MD = '### [STUB] Seam fixture\nhttps://stub.example/seam\ninjected record body\n';
 const record = (failures = []) => ({
   markdown: failures.length ? '' : STUB_MD,
@@ -54,6 +57,10 @@ const record = (failures = []) => ({
   failures,
   perSource: failures.length ? [] : [{ tag: 'STUB', hits: 1, ms: 0 }],
 });
+/** Page-read seam: a failing record, so the application-controlled reads stay
+ *  out of these search-only cases (no network below the seam). */
+const failedRead = async (url) => ({ ok: false, url, status: 'failed', reason: 'no read seam in this test' });
+
 /** search(query, opts) -> record, remembering every call and how many chat
  *  POSTs had already happened when it arrived (research must come first). */
 function stubSearch(rec = record()) {
@@ -92,7 +99,7 @@ const SEARCHES = MAX_RESEARCH_ROUNDS - 1; // the initial lookup spends the first
 async function drive(text, responses, opts = {}) {
   const {
     model = 'x/y:free', key = '', search = stubSearch(), persist = null,
-    tools, retry, correct, seed = [],
+    tools, retry, correct, seed = [], read = failedRead,
   } = opts;
   bridge.clearHistory();
   for (const [role, content] of seed) bridge.appendHistory(role, content);
@@ -122,7 +129,7 @@ async function drive(text, responses, opts = {}) {
   const summary = await bridge.runTurn(text, {
     system: SYSTEM, getKey: () => key, model, on,
     persist: persist || recordPersist,
-    search, tools, retry, correct,
+    search, read, tools, retry, correct,
   });
   return { seen, search, events, persists, summary, calls: calls.slice() };
 }
@@ -137,11 +144,13 @@ async function drive(text, responses, opts = {}) {
   assert.equal(calls.length, 1, 'plain finish: 1 chat call');
   assert.equal(seen.done, 1, 'plain finish: done once');
   assert.deepEqual(search.seen.map((s) => s.query), ['explain wasm'], 'plain finish: initial research query');
-  assert.deepEqual(search.seen[0].opts, { fresh: true }, 'plain finish: initial lookup asks for fresh results');
+  assert.equal(search.seen[0].opts.fresh, true, 'plain finish: initial lookup asks for fresh results');
+  assert.equal(search.seen[0].opts.plan.kind, 'general', 'plain finish: the plan routes the initial lookup');
   assert.equal(search.seen[0].chatCalls, 0, 'plain finish: research precedes every chat POST');
   const msgs = calls[0].messages;
   assert.equal(msgs[0].role, 'system', 'plain finish: system prompt rides opts, not history');
-  assert.equal(msgs[0].content, SYSTEM, 'plain finish: system prompt is the caller string');
+  assert.ok(msgs[0].content.startsWith(SYSTEM), 'plain finish: system prompt is the caller string');
+  assert.match(msgs[0].content, /Clock source: device\.$/, 'plain finish: the clock line closes the system message');
   assert.ok(msgs.some((m) => m.role === 'user' && m.content === `Web search results for "explain wasm":\n\n${STUB_MD.trim()}`),
     'plain finish: research results ride a plain user message');
   assert.equal(msgs.filter((m) => m.role === 'user').length, 2, 'plain finish: question + research results');
@@ -327,10 +336,18 @@ async function drive(text, responses, opts = {}) {
   assert.equal(finished.hits, 1, 'research-finished: carries the hit count');
   assert.deepEqual(
     out.events.map((ev) => ev.type),
-    ['research-started', 'research-finished', 'round-started', 'tool-started', 'tool-finished',
-      'round-started', 'delta', 'round-final', 'done'],
+    ['research-started', 'sources', 'research-finished', 'sources', 'round-started', 'tool-started',
+      'sources', 'tool-finished', 'round-started', 'delta', 'round-final', 'done'],
     'events: exact sequence for one tool round then an answer (the streamed answer is a delta)',
   );
+  const sourceLists = out.events.filter((ev) => ev.type === 'sources').map((ev) => ev.list);
+  assert.deepEqual(sourceLists.map((l) => l.length), [1, 1, 1],
+    'events: the sources list carries the discovered URL after every mutation');
+  assert.equal(sourceLists[0][0].url, 'https://stub.example/seam', 'events: the searched URL is on the first list');
+  assert.equal(sourceLists.at(-1)[0].status, 'ok',
+    'events: a failed read never demotes a source the search already found');
+  assert.deepEqual(sourceLists[0].map((r) => r.id), sourceLists.at(-1).map((r) => r.id),
+    'events: record ids stay stable across snapshots');
   const starts = out.events.filter((ev) => ev.type === 'round-started');
   assert.deepEqual(starts.map((ev) => ev.round), [0, 1], 'events: round-started carries round index 0 then 1');
   console.log('ok  : tool-finished + research event shapes, exact event sequence');
@@ -381,7 +398,7 @@ async function drive(text, responses, opts = {}) {
   });
   assert.deepEqual(out.persists, ['P2'], 'retry: no user persist point');
   assert.deepEqual(out.search.seen.map((s) => s.query), ['retried question'], 'retry: research runs again');
-  assert.deepEqual(out.search.seen[0].opts, { fresh: true }, 'retry: research is fresh, not cached');
+  assert.equal(out.search.seen[0].opts.fresh, true, 'retry: research is fresh, not cached');
   assert.deepEqual(out.seen.finals, ['second try'], 'retry: answer settles');
   const users = bridge.historyMessages().filter((m) => m.role === 1).map((m) => m.content);
   assert.equal(users.length, 2, 'retry: the question is not stored twice');

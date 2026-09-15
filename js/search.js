@@ -2,10 +2,16 @@
 // Every source is failure-tolerant: a failure simply omits that block.
 // ADR 0004: 12 keyless Sources (4 existing + 8 P0: GDELT dropped — 17s timeout breaks 8s SLO), DDG + keyed dropped, grouped by Source weight, dedup norm(url), 12k slice, retry once on Timeout/429.
 // ADR 0008: +13 general Sources (espn/mlb/coingecko/frankfurter/openmeteo/worldbank/endoflife/cep/wdqs/jinaweb/jinanews/dictionary/tvmaze), heuristic gating + smartSlice + caps + limiter + cache.
+// Routing: the intent kind (js/research.js classifyIntent, or webSearch's `plan` opt) gates the
+// academic/code/news/visual/definition Sources. Page reads go through readPage() on the same
+// 20/min jina limiter, and the JINA search readers are parsed per result (uddg wrappers decoded)
+// instead of one giant search-results block.
+
+import { classifyIntent } from './research.js';
 
 /*
 Heuristics — one block (ADR 0008):
-- espn:       /\b(nfl|nba|mlb|premier league|soccer league)\b/i OR MLB/NBA/NFL team nickname (TEAM_LEAGUES map; ambiguous nicknames resolved by co-mention, else default) → ESPN scoreboard /apis/site/v2/sports/{league}/scoreboard
+- espn:       score tokens (score|scores|scoreboard|game|games|tonight|last night|vs|versus|final|finals|won|beat) AND (/\b(nfl|nba|mlb|premier league|soccer league)\b/i OR MLB/NBA/NFL team nickname — TEAM_LEAGUES map; ambiguous nicknames resolved by co-mention, else default) → ESPN scoreboard /apis/site/v2/sports/{league}/scoreboard
 - mlb:        /\b(mlb|baseball)\b/i                              → statsapi.mlb.com schedule (today)
 - coingecko:  /\b(bitcoin|btc|ethereum|eth|solana|sol|dogecoin|doge|cardano|ada|litecoin|ltc|ripple|xrp|polkadot|dot|chainlink|link)\b/i → coingecko simple/price
 - frankfurter:/\b(usd|eur|gbp|jpy|cad|aud|chf|cny|inr|brl|rub|krw|mxn|sek|nok|dkk|pln|try|nzd|sgd|hkd|zar|aed|thb|dollar|euro|yen|pound)\b/i (needs ≥2 distinct codes) → frankfurter latest
@@ -16,8 +22,9 @@ Heuristics — one block (ADR 0008):
 - wdqs:       /^who (is|leads)|current (president|prime minister|ceo|pope|king|monarch)/i → small hardcoded Q-id map (~20) → query.wikidata.org/sparql (tiny LIMIT 3) — document limits
 - dictionary: /(what does .* mean|define\s+\w+)/i → dictionaryapi.dev entries
 - tvmaze:     /(tv show|series|episode|tv series)/i → api.tvmaze.com/search/shows
-- jinaweb:    ALWAYS eligible behind shared limiter (20/min) → r.jina.ai/https://lite.duckduckgo.com/lite/?q=… + attribution footer
-- jinanews:   /\b(news|headlines|right now|today|this week)\b/i behind same limiter → r.jina.ai/https://news.google.com/rss/search?q=…
+- jinaweb:    ALWAYS eligible behind shared limiter (20/min) → r.jina.ai/https://lite.duckduckgo.com/lite/?q=… parsed per result (uddg wrapper → real URL, ≤5 hits) + attribution footer
+- jinanews:   /\b(news|headlines|right now|today|this week)\b/i or news intent, behind same limiter → r.jina.ai/https://news.google.com/rss/search?q=… parsed per result
+- readPage:   direct GET first (no custom headers, credentials omitted); CORS/HTTP failure → r.jina.ai/<url> on the same limiter. 403/challenge/empty are failure outcomes, never evidence.
 - StackExchange upgraded: withbody + sites [stackoverflow,cooking,diy,physics] parallel fan-out + quota_remaining>50 guard for answer-hop
 - Caps: applyWikiCaps limits WIKIPEDIA ≤2 and WIKIDATA* ≤2 blocks (header regex ^### \[TAG\]), DBPEDIA uncapped
 - Slice: smartSlice term-scored selection preserving original order, budget 12000
@@ -327,8 +334,14 @@ function leagueFromTeams(lower) {
   return fallback;
 }
 
+// Scoreboard-intent tokens, required in addition to a league or team nickname:
+// 'nba career points leaders' is not a scoreboard query, while 'nfl scores
+// today', 'giants vs dodgers score' and 'lakers game tonight' are.
+const SCORE_RE = /\b(score|scores|scoreboard|game|games|tonight|last night|vs|versus|final|finals|won|beat)\b/i;
+
 async function espn(q, sig, transport) {
   const lower = q.toLowerCase();
+  if (!SCORE_RE.test(lower)) return '';
   let leaguePath = null;
   if (/\bnfl\b/.test(lower)) leaguePath = 'football/nfl';
   else if (/\bnba\b/.test(lower)) leaguePath = 'basketball/nba';
@@ -450,8 +463,7 @@ async function endoflifeSource(q, sig, transport) {
   }).join('');
 }
 
-async function cepSource(q, sig, transport, fresh) {
-  if (!/(news|current events|headlines|breaking)/i.test(q)) return '';
+async function cepSource(sig, transport, fresh) {
   const u = `https://en.wikipedia.org/w/api.php?action=parse&page=Portal:Current_events&format=json&origin=*`;
   const j = await cachedJson(u, sig, transport, fresh);
   const html = j?.parse?.text?.['*'] || j?.parse?.text || '';
@@ -543,7 +555,66 @@ export function createLimiter(perMinute) {
 export const jinaLimiter = createLimiter(20);
 // Anon limiter for OPENVERSE (15/min) — per research sketch only openverse uses it; ddgia/wiki/mwmbl use cachedJson alone
 export const anonLimiter = createLimiter(15);
-async function jinaHelper(q, tag, target, sig, transport, limiter, fresh) {
+// ── JINA reader parsing: search results ────────────────────────────────
+const JINA_MAX_RESULTS = 5;
+const MD_LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)/;
+// DDG's lite SERP renders a bare display URL under each description line.
+const DISPLAY_URL_RE = /^(?:https?:\/\/\S+|[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\s*[›>].*)?)$/i;
+const NAV_TITLES = new Set(['settings', 'feedback', 'help', 'privacy', 'about', 'terms', 'sign in', 'log in', 'login']);
+const AD_HREF_RE = /\/y\.js\b|ad_provider=|ad_domain=|\/aclick\b/i;
+
+const hostOf = (url) => { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } };
+
+/** Destination of a reader link. DuckDuckGo's /l/?uddg=<encoded> wrapper is
+ *  decoded to the real URL (URLSearchParams does the decodeURIComponent), so
+ *  the redirect wrapper is never reported as the source; '' when the href is
+ *  not a usable http(s) URL. */
+export function decodeReaderLink(href) {
+  const raw = String(href || '').trim().replace(/^\/\//, 'https://');
+  if (!/^https?:\/\//i.test(raw)) return '';
+  let u;
+  try { u = new URL(raw); } catch { return ''; }
+  if (/(^|\.)duckduckgo\.com$/i.test(u.hostname) && u.pathname.startsWith('/l')) {
+    const dest = u.searchParams.get('uddg');
+    if (!dest) return '';
+    try { return new URL(dest).href; } catch { return ''; }
+  }
+  return /^https?:$/i.test(u.protocol) ? u.href : '';
+}
+
+/** One hit per search result in a Jina reader render of a results page:
+ *  numbered lines ("1.[Title](url)"), bullet links and bare link lines all
+ *  parse, an optional description line becomes the snippet. Ad, nav, wrapper
+ *  and empty entries are dropped; capped at 5 results. Pure. */
+export function parseJinaResults(input) {
+  const lines = String(input ?? '').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length && out.length < JINA_MAX_RESULTS; i++) {
+    const m = lines[i].match(MD_LINK_RE);
+    if (!m) continue;
+    const lead = lines[i].slice(0, m.index).trim();
+    // a link that opens a result line is preceded by a number/bullet only;
+    // a link inside prose is not a result
+    if (lead && !/^[\d*+\-.)\s]*$/.test(lead)) continue;
+    const title = m[1].replace(/\*\*|__/g, '').trim();
+    const url = decodeReaderLink(m[2]);
+    if (!title || !url || AD_HREF_RE.test(m[2]) || NAV_TITLES.has(title.toLowerCase())) continue;
+    if (/(^|\.)duckduckgo\.com$/.test(hostOf(url))) continue; // unresolved wrapper / DDG nav
+    let snippet = '';
+    for (let j = i + 1; j <= i + 3 && j < lines.length; j++) {
+      const l = lines[j].trim();
+      if (!l) continue;
+      if (MD_LINK_RE.test(l)) break;
+      if (DISPLAY_URL_RE.test(l)) break; // display URL: this result has no description
+      snippet = l.replace(/\*\*|__/g, '').trim().slice(0, 300);
+      break;
+    }
+    out.push({ title, url, snippet });
+  }
+  return out;
+}
+
+async function jinaHelper(tag, target, sig, transport, limiter, fresh) {
   const url = `https://r.jina.ai/${target}`;
   const k = 'asm:' + hashUrl(url);
   let text;
@@ -554,31 +625,237 @@ async function jinaHelper(q, tag, target, sig, transport, limiter, fresh) {
     if (limiter) await limiter.take();
     text = await cachedText(url, sig, transport, fresh);
   }
-  const snippet = String(text).slice(0, 800);
-  // r.jina.ai answers 200 with an empty body when the reader extracts nothing
-  // (blocked target, empty result page, limiter page). A block built from that
-  // still counts as a Source in the answer footer while carrying no evidence,
-  // and it makes the documented "no search results" state unreachable. Skip it
-  // like every other Source that found nothing.
-  if (!snippet.trim()) return '';
-  const title = tag === 'JINA NEWS' ? `news for ${q.slice(0,60)}` : `web results for ${q.slice(0,60)}`;
-  return fmt(tag, title, target, snippet + '\n— via Jina Reader');
+  // The cached artifact is the reader TEXT; parsing runs on every call. A
+  // reader that extracted nothing (blocked target, empty result page, limiter
+  // page) yields no results, so no block: the documented "no search results"
+  // state stays reachable, and a search-results page never arrives as one
+  // giant block.
+  const results = parseJinaResults(text);
+  if (!results.length) return '';
+  return results.map((r) => fmt(tag, r.title, r.url, r.snippet ? `${r.snippet}\n— via Jina Reader` : '— via Jina Reader')).join('');
 }
 async function jinawebSource(q, sig, transport, limiter, fresh) {
   const target = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}`;
-  return jinaHelper(q, 'JINA WEB', target, sig, transport, limiter ?? jinaLimiter, fresh);
+  return jinaHelper('JINA WEB', target, sig, transport, limiter ?? jinaLimiter, fresh);
 }
 async function jinanewsSource(q, sig, transport, limiter, fresh) {
-  if (!/\b(news|headlines|right now|today|this week)\b/i.test(q)) return '';
   const target = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-  return jinaHelper(q, 'JINA NEWS', target, sig, transport, limiter ?? jinaLimiter, fresh);
+  return jinaHelper('JINA NEWS', target, sig, transport, limiter ?? jinaLimiter, fresh);
+}
+
+// ── page reads — direct GET first, r.jina.ai reader when CORS/HTTP blocks it ──
+const READER_TEXT_CAP = 24000;
+// A 200 that is a challenge/interstitial is a blocked retrieval, not content.
+const CHALLENGE_RE = /just a moment|enable javascript and cookies|checking your browser|cf-browser-verification|verify (?:you are|that you are) (?:a )?human|are you a robot|unusual traffic|ddos protection|attention required|access denied/i;
+const BLOCKED_STATUS = new Set([401, 402, 403, 407, 429, 451]);
+const isChallenge = (text) => CHALLENGE_RE.test(String(text ?? '').slice(0, 4000));
+
+/** SSRF gate for readPage: http(s) only, no userinfo, no loopback / private /
+ *  link-local / local host. Boolean so callers need no try/catch. */
+export function assertReadableUrl(url) {
+  const raw = String(url ?? '').trim();
+  if (!/^https?:\/\//i.test(raw)) return false;
+  let u;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  if (u.username || u.password) return false;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return false;
+  if (/^\d+$/.test(host) || /^0x[0-9a-f]/i.test(host)) return false;         // decimal / hex IP forms
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host)) return false;    // loopback, private, link-local
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+  if (host === '::1' || /^(fc|fd|fe80)/.test(host)) return false;            // IPv6 loopback + ULA + link-local
+  return true;
+}
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function decodeEntities(s) {
+  return String(s ?? '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, ent) => {
+    const key = ent.toLowerCase();
+    if (key[0] === '#') {
+      const cp = key[1] === 'x' ? parseInt(key.slice(2), 16) : parseInt(key.slice(1), 10);
+      return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : whole;
+    }
+    return key in ENTITIES ? ENTITIES[key] : whole;
+  });
+}
+const cleanInline = (s) => decodeEntities(String(s ?? '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+
+const DATE_VALUE = '(\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?Z?)?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.? \\d{1,2},? \\d{4}|\\d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.? \\d{4})';
+/** Date a page states about itself under `label` ("Updated 2024-01-03"). */
+function findDate(text, label) {
+  const m = String(text ?? '').match(new RegExp(`${label}[^\\n]{0,24}?${DATE_VALUE}`, 'i'));
+  return m ? m[1] : '';
+}
+/** Attach the dates the page text states about itself (absent when it states none). */
+function withDates(page, text) {
+  const head = String(text ?? '').slice(0, 600);
+  const published = findDate(head, 'published');
+  if (published) page.publishedAt = published;
+  const updated = findDate(head, 'updated');
+  if (updated) page.updatedAt = updated;
+  const asOf = findDate(head, '(?:data )?as of');
+  if (asOf) page.dataAsOf = asOf;
+  return page;
+}
+
+const isTableLine = (line) => /^\s*\|.*\|\s*$/.test(line);
+function parseTable(block) {
+  const cells = block.map((row) => row.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim()));
+  // header row + alignment separator; rows keep their header by construction
+  if (cells.length < 2 || !cells[1].every((c) => /^:?-{2,}:?$/.test(c))) return null;
+  return { headers: cells[0], rows: cells.slice(2) };
+}
+function markdownParts(body) {
+  const headings = [];
+  const tables = [];
+  const lines = String(body ?? '').split('\n');
+  for (let i = 0; i < lines.length;) {
+    const h = lines[i].match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (h) headings.push({ level: h[1].length, text: h[2].trim() });
+    if (isTableLine(lines[i])) {
+      let j = i;
+      while (j < lines.length && isTableLine(lines[j])) j++;
+      const t = parseTable(lines.slice(i, j));
+      if (t) tables.push(t);
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  return { headings, tables };
+}
+
+/** Bound reader markdown at the retrieval cap without cutting a markdown table
+ *  in half: a partial table would lose the header row its rows belong to, so
+ *  the slice ends before the straddling table instead. */
+function boundText(body) {
+  if (body.length <= READER_TEXT_CAP) return body;
+  const lines = body.split('\n');
+  let cut = body.lastIndexOf('\n', READER_TEXT_CAP);
+  if (cut <= 0) cut = READER_TEXT_CAP;
+  let off = 0;
+  for (let i = 0; i < lines.length && off < cut;) {
+    if (!isTableLine(lines[i])) { off += lines[i].length + 1; i++; continue; }
+    const start = off;
+    while (i < lines.length && isTableLine(lines[i])) { off += lines[i].length + 1; i++; }
+    if (cut > start && cut < off) cut = Math.max(0, start - 1);
+  }
+  return body.slice(0, cut);
+}
+
+/** Parse a r.jina.ai page read: the reader header block (Title:/URL Source:/
+ *  Published Time:/Markdown Content:), markdown headings and tables, and the
+ *  dates the page states about itself. Pure and total — malformed input yields
+ *  empty fields instead of throwing. `text` is bounded (~24k chars, no split
+ *  table); `headings`/`tables` parse the full body so a table header never
+ *  loses its rows. */
+export function parseReaderPage(input) {
+  const lines = String(input ?? '').split('\n');
+  let title = '';
+  let urlSource = '';
+  let published = '';
+  let updated = '';
+  let idx = 0;
+  for (; idx < lines.length && idx < 40; idx++) {
+    const line = lines[idx];
+    if (!line.trim()) continue; // reader header fields are blank-line separated
+    const m = line.match(/^(Title|URL Source|Published(?: Time| On)?|Date|Updated(?: Time)?|Last updated|Markdown Content|Description|Warning)\s*:\s*(.*)$/i);
+    if (!m) break;
+    const key = m[1].toLowerCase();
+    const val = m[2].trim();
+    if (key === 'title') title = title || val;
+    else if (key === 'url source') urlSource = urlSource || val;
+    else if (key === 'date' || key.startsWith('published')) published = published || val;
+    else if (key.startsWith('updated') || key === 'last updated') updated = updated || val;
+    if (key.startsWith('markdown content')) { idx++; break; }
+  }
+  let rest = lines.slice(idx);
+  const first = rest.findIndex((l) => l.trim());
+  rest = first === -1 ? [] : rest.slice(first);
+  const body = rest.join('\n');
+  const { headings, tables } = markdownParts(body);
+  const page = withDates({ title, urlSource, text: boundText(body).trim(), headings, tables }, body);
+  if (published) page.publishedAt = published; // the reader header beats page text
+  if (updated) page.updatedAt = updated;
+  return page;
+}
+
+/** Direct-fetch HTML (a page that allows cross-origin reads): title, headings,
+ *  tables and readable text. Pages that don't are the reader's job. */
+function htmlToPage(html) {
+  const src = String(html ?? '');
+  const title = cleanInline((src.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [, ''])[1]);
+  const headings = [];
+  for (const m of src.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi)) {
+    const text = cleanInline(m[2]);
+    if (text) headings.push({ level: Number(m[1]), text });
+  }
+  const tables = [];
+  for (const m of src.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const rows = [...m[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((r) =>
+      [...r[1].matchAll(/<(?:td|th)[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)].map((c) => cleanInline(c[1])));
+    if (rows.length >= 2) tables.push({ headers: rows[0], rows: rows.slice(1) });
+  }
+  const text = decodeEntities(
+    src.replace(/<(script|style|noscript|template|svg|head)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<(?:br|\/p|\/div|\/li|\/tr|\/h[1-6]|\/section|\/article|\/table|\/ul|\/ol)[^>]*>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+  ).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return withDates({ title, urlSource: '', text: boundText(text), headings, tables }, text);
+}
+
+/** Drop the reader's URL Source line from a readPage result (it is reported as
+ *  finalUrl instead). */
+function withoutSource(page) {
+  const out = { ...page };
+  delete out.urlSource;
+  return out;
+}
+
+/** Read one page: direct GET first (plain request — no custom headers,
+ *  credentials omitted); a network/CORS failure or a non-ok response falls
+ *  back to the r.jina.ai reader on the shared 20/min jina limiter. A reader
+ *  4xx/5xx, a challenge page and an empty extraction are failure outcomes
+ *  (`blocked`/`failed`/`empty`), never evidence. */
+export async function readPage(url, { transport = fetch, signal } = {}) {
+  const input = String(url ?? '').trim();
+  if (!assertReadableUrl(input)) return { ok: false, url: input, status: 'error', reason: 'unreadable url (scheme, userinfo or private host)' };
+  try {
+    const r = await transport(input, { signal, credentials: 'omit' });
+    if (r && r.ok) {
+      const body = await r.text();
+      if (isChallenge(body)) return { ok: false, url: input, status: 'blocked', reason: 'challenge page' };
+      const type = String(r.headers && typeof r.headers.get === 'function' ? r.headers.get('content-type') || '' : '');
+      const html = /html/i.test(type) || /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(String(body).slice(0, 200));
+      const page = html ? htmlToPage(body) : parseReaderPage(body);
+      if (!page.text) return { ok: false, url: input, status: 'empty', reason: 'no extractable text' };
+      return { ok: true, url: input, finalUrl: typeof r.url === 'string' && r.url ? r.url : input, ...withoutSource(page) };
+    }
+  } catch { /* network/CORS → the reader is the compliant path */ }
+  const readerUrl = `https://r.jina.ai/${input}`;
+  let raw;
+  try {
+    await jinaLimiter.take();
+    const r = await transport(readerUrl, { signal });
+    if (!r || !r.ok) {
+      const status = r ? Number(r.status) : 0;
+      return { ok: false, url: input, status: BLOCKED_STATUS.has(status) ? 'blocked' : 'failed', reason: `reader HTTP ${status || 'error'}` };
+    }
+    raw = await r.text();
+  } catch (e) {
+    return { ok: false, url: input, status: 'failed', reason: `read failed: ${String((e && e.message) || e)}` };
+  }
+  if (isChallenge(raw)) return { ok: false, url: input, status: 'blocked', reason: 'challenge page' };
+  const page = parseReaderPage(raw);
+  if (!page.text) return { ok: false, url: input, status: 'empty', reason: 'reader extracted no text' };
+  return { ok: true, url: input, finalUrl: page.urlSource || input, ...withoutSource(page) };
 }
 
 async function dictionarySource(q, sig, transport) {
-  let word = null;
-  let m = q.match(/what does\s+["']?([a-zA-Z\-]+)["']?\s+mean/i);
-  if (m) word = m[1];
-  else { m = q.match(/\bdefine\s+["']?([a-zA-Z\-]+)["']?/i); if (m) word = m[1]; }
+  const m = String(q ?? '').match(DEFINE_TOKENS_RE);
+  const word = m ? (m[1] || m[2]) : null;
   if (!word) return '';
   const u = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`;
   const j = await jfetch(u, { signal: sig }, transport);
@@ -633,21 +910,18 @@ async function wikiOpenSearchSource(q, sig, transport, fresh) {
   let out = ''; for (let i=0;i<Math.min(3,titles.length);i++) { const title=titles[i]; const url=urls[i]||`https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g,'_'))}`; const s=summaries[i]?.status==='fulfilled'?summaries[i].value:null; const extract=s?.extract?String(s.extract).slice(0,260):(Array.isArray(os?.[2])?String(os[2][i]||'').slice(0,220):''); out+=fmt('WIKI OPENSEARCH', `${title}${s?.type==='disambiguation'?' (disambiguation)':''}`, url, (extract||title).trim()); } return out;
 }
 async function openverseSource(q, sig, transport, limiter, fresh) {
-  if (!q || String(q).trim().length === 0) return '';
-  const visualRe = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b/i;
-  if (!visualRe.test(String(q)) && String(q).trim().split(/\s+/).length < 2) return '';
   const url = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=3`;
   const k = 'asm:' + hashUrl(url);
   const hit = fresh ? null : cacheGet(k);
   if (hit !== null) {
     const results = Array.isArray(hit?.results)?hit.results:[];
     if(!results.length) return '';
-    return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
+    return results.map((r) => fmt('OPENVERSE', (r.title||'Openverse image').slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
   }
   if (limiter) await limiter.take();
   const j = await cachedJson(url, sig, transport, fresh);
   const results = Array.isArray(j?.results)?j.results:[]; if(!results.length) return '';
-  return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
+  return results.map((r) => fmt('OPENVERSE', (r.title||'Openverse image').slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
 }
 async function mwmblSource(q, sig, transport, fresh) {
   if (!q || q.trim().length < 3) return '';
@@ -655,7 +929,12 @@ async function mwmblSource(q, sig, transport, fresh) {
   const j = await cachedJson(url, sig, transport, fresh);
   const results = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : []);
   if (!results.length) return '';
-  return results.slice(0,3).map((r) => fmt('MWMBl', (r.title || r.name || q.slice(0,60)).slice(0,80), r.url || r.link || url, `${stripTags(r.extract || r.snippet || r.description || '').slice(0,220)} — via mwmbl`)).join('');
+  // The live payload sometimes carries an object (not a string) in the extract
+  // fields; only strings are usable, so a snippet-less block beats "[object Object]".
+  return results.slice(0,3).map((r) => {
+    const extract = [r.extract, r.snippet, r.description].find((x) => typeof x === 'string' && x.trim()) || '';
+    return fmt('MWMBl', (r.title || r.name || q.slice(0,60)).slice(0,80), r.url || r.link || url, `${stripTags(extract).slice(0,220)} — via mwmbl`);
+  }).join('');
 }
 
 // ── smartSlice + caps — exported ──
@@ -731,7 +1010,6 @@ function namesTrackedProduct(q) {
 export function smartSlice(blocks, query, budget = 12000) {
   const markdown = Array.isArray(blocks) ? blocks.join('') : String(blocks || '');
   if (!markdown) return '';
-  if (markdown.length <= budget) return markdown;
   const rawBlocks = markdown.split(/(?=### \[)/).filter(Boolean);
   const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
   const eolBoost = namesTrackedProduct(String(query || '')) ? EOL_BOOST : 0;
@@ -743,15 +1021,22 @@ export function smartSlice(blocks, query, budget = 12000) {
     // small length penalty to prefer concise hits when tied
     return { b, i, score, len: b.length };
   });
-  scored.sort((a,b)=> b.score - a.score || a.i - b.i);
+  // Relevance filters regardless of the budget: a block that shares no query
+  // token with the query carries nothing the query asked for (a search-results
+  // page sliced as one giant block was the motivating case). When no block
+  // scores at all the filter would empty the slice, so the blocks are kept —
+  // a non-empty input never yields an empty slice.
+  const anyScored = scored.some((s) => s.score > 0);
+  const relevant = anyScored ? scored.filter((s) => s.score > 0) : scored;
+  relevant.sort((a, b) => b.score - a.score || a.i - b.i);
   let total = 0;
   const picked = [];
-  for (const s of scored) {
+  for (const s of relevant) {
     if (total + s.len <= budget) { picked.push(s); total += s.len; }
   }
-  // if nothing fits (single huge block), truncate first block
-  if (!picked.length && scored.length) {
-    return scored[0].b.slice(0, budget);
+  // if nothing fits (single huge block), truncate the top block
+  if (!picked.length && relevant.length) {
+    return relevant[0].b.slice(0, budget);
   }
   picked.sort((a,b)=> a.i - b.i);
   const out = picked.map((p)=>p.b).join('');
@@ -812,15 +1097,56 @@ const TAG = {
 /** Shipping Source names — the Fan-out's job names. The Sweep validates its canned corpus keys against this list. */
 export const SOURCE_NAMES = Object.keys(TAG);
 
+// ── intent routing ─────────────────────────────────────────────────────
+// A query's kind (js/research.js classifyIntent, or webSearch's `plan` opt)
+// decides which intent-specific Sources are scheduled. Sources not listed run
+// for every query: the general-web set plus the Sources that keep their
+// documented token heuristics (wdqs/endoflife/coingecko/frankfurter/openmeteo/
+// worldbank, openlibrary/tvmaze, wikipedia/wikidata/dbpedia). The news/visual/
+// definition gates used to live inside their Source; they live here now so
+// routing and the Source share one definition and the gate itself is unchanged.
+const NEWS_TOKENS_RE = /\b(news|headlines|right now|today|this week)\b/i;      // jinanews
+const EVENTS_TOKENS_RE = /(news|current events|headlines|breaking)/i;          // cep
+const VISUAL_TOKENS_RE = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b/i;
+const DEFINE_TOKENS_RE = /what does\s+["']?([a-zA-Z\-]+)["']?\s+mean|\bdefine\s+["']?([a-zA-Z\-]+)["']?/i;
+
+/** Source -> the intent kinds it serves. */
+const ROUTING = {
+  openalex: ['academic'], crossref: ['academic'], doaj: ['academic'],
+  hn: ['code'], stackexchange: ['code'], github: ['code'], lobsters: ['code'],
+  jinanews: ['news'], cep: ['news'],
+  openverse: ['visual'],
+  dictionary: ['definition'],
+};
+
+/** True when `kind` — and, for the token-gated Sources, the documented token
+ *  gate they always had — lets `name` run this query. */
+function routeAllows(name, kind, query) {
+  const intents = ROUTING[name];
+  if (!intents) return true;
+  if (intents.includes(kind)) return true;
+  const q = String(query ?? '');
+  switch (name) {
+    case 'jinanews': return NEWS_TOKENS_RE.test(q);
+    case 'cep': return EVENTS_TOKENS_RE.test(q);
+    case 'openverse': return q.trim() !== '' && (VISUAL_TOKENS_RE.test(q) || q.trim().split(/\s+/).length >= 2);
+    case 'dictionary': return DEFINE_TOKENS_RE.test(q);
+    default: return false;
+  }
+}
+
 /** query -> { markdown, sources, failures, perSource }. `transport` replaces
  *  the platform fetch per call (the Sweep's corpus-backed transport rides
  *  this seam); Sources never reach for globals themselves. `fresh: true`
- *  skips the sessionStorage cache so the call makes real network requests. */
-export async function webSearch(query, { transport = fetch, fresh = false } = {}) {
+ *  skips the sessionStorage cache so the call makes real network requests.
+ *  `plan` (js/research.js planTask output) routes the Sources on its kind;
+ *  without a plan the kind comes from classifyIntent(query). */
+export async function webSearch(query, { transport = fetch, fresh = false, plan = null } = {}) {
   const failures = [];
+  const kind = (plan && plan.kind) || classifyIntent(query);
   const withMs = (name, fn) => (async () => {
     const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const block = await timed(name, fn, failures);
+    const block = routeAllows(name, kind, query) ? await timed(name, fn, failures) : '';
     const end = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const ms = Math.round(end - start);
     const tag = TAG[name] || name.toUpperCase();
@@ -862,7 +1188,7 @@ export async function webSearch(query, { transport = fetch, fresh = false } = {}
     withMs('openmeteo', (sig) => openmeteoSource(query, sig, transport, getGeo)),
     withMs('worldbank', (sig) => worldbankSource(query, sig, transport, getGeo)),
     withMs('endoflife', (sig) => endoflifeSource(query, sig, transport)),
-    withMs('cep', (sig) => cepSource(query, sig, transport, fresh)),
+    withMs('cep', (sig) => cepSource(sig, transport, fresh)),
     withMs('wdqs', (sig) => wdqsSource(query, sig, transport, fresh)),
     withMs('jinaweb', (sig) => jinawebSource(query, sig, transport, jinaLimiter, fresh)),
     withMs('jinanews', (sig) => jinanewsSource(query, sig, transport, jinaLimiter, fresh)),

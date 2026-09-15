@@ -19,7 +19,8 @@
 //   lookup.dbpedia.org   js/search.js dbpedia()
 //   lobste.rs            js/search.js lobsters()
 //   endoflife.date       js/search.js endoflifeSource()
-//   r.jina.ai            js/search.js jinaHelper()
+//   www.basketball-reference.com  js/search.js readPage() direct read (SERP destinations)
+//   r.jina.ai            js/search.js jinaHelper(), readPage() reader fallback
 //   api.duckduckgo.com   js/search.js ddgiaSource()
 //   api.openverse.org    js/search.js openverseSource()
 //   api.mwmbl.org        js/search.js mwmblSource()
@@ -85,6 +86,71 @@ export const EXPECTED_DEFAULT_MODEL = 'asm/synthetic-flagship:free';
 // stay out of the way, so a turn is exactly one model round.
 export const DEFAULT_ANSWER = 'The synthetic catalog answered this question from fixture data.';
 
+// ── r.jina.ai: the reader, routed by its target ──────────────────────────
+// js/search.js jinaHelper() fetches r.jina.ai/<target-url> (the path after the
+// host IS the target) and readPage() falls back to the same reader for any
+// destination a direct read cannot serve, so this handler answers by target:
+// DuckDuckGo's lite SERP as a reader render of numbered results, every other
+// target as the leaderboard page those results rank. The SERP's destination
+// URLs are fixture pages too (www.basketball-reference.com in the table below)
+// with this same render behind them, so either read path lands on the answer.
+
+const READER_RESULTS = [
+ ['NBA career scoring leaders — Basketball-Reference.com',
+  'https://www.basketball-reference.com/leaders/nba_career_pts.html',
+  'Career points totals for every player in NBA history.'],
+ ['NBA active career scoring leaders — Basketball-Reference.com',
+  'https://www.basketball-reference.com/leaders/nba_career_pts_active.html',
+  'Career points totals among active players.'],
+ ['NBA leaders and records index — Basketball-Reference.com',
+  'https://www.basketball-reference.com/leaders/',
+  'Every career leaderboard in NBA history.'],
+];
+
+/** Reader render for a plain destination page: title from the path, several
+ *  paragraphs of neutral text so the answer sits past the first 800 chars. */
+const plainPage = (target) => {
+ const title = decodeURIComponent((target.split('/').pop() || 'synthetic').replace(/[-_]/g, ' '));
+ return `Title: ${title}
+URL Source: ${target}
+Markdown Content:
+This synthetic page is served by the test fixture server for the destinations the fixture corpus itself advertises. Its prose exists so the application's page reads resolve instead of failing. The paragraphs are deliberately plain so a reader that parses headings and text sees a real page's shape.
+The page carries several paragraphs of neutral synthetic text. Nothing here is an instruction to the application, and nothing here pretends to be evidence it is not.
+## Notes
+The notes section marks the page's own structure so heading parsing sees the same shape as a real article.
+`;
+};
+
+/** Reader render of DuckDuckGo's lite SERP: numbered markdown results behind
+ *  DDG's /l/?uddg= redirect, which js/search.js parseJinaResults() decodes to
+ *  the real destination URL. */
+const serpPage = () => {
+ const lines = ['Title: DuckDuckGo Lite', 'URL Source: https://lite.duckduckgo.com/lite/', 'Markdown Content:'];
+ READER_RESULTS.forEach(([title, dest, snippet], i) => {
+  const rut = (0x4f1a2b + i * 0x7d31).toString(16);
+  lines.push(`${i + 1}.[${title}](https://duckduckgo.com/l/?uddg=${encodeURIComponent(dest)}&rut=${rut})`);
+  lines.push(snippet);
+ });
+ return `${lines.join('\n')}\n`;
+};
+
+/** The pages the leaderboard results rank: the answer is a points table well
+ *  below the fold, so a reader that stops at the first paragraphs never sees
+ *  it. readPage() may fetch this render directly or through r.jina.ai. */
+const leaderboardPage = (target) => `Title: NBA Career Leaders and Records for Points
+URL Source: ${target}
+Markdown Content:
+The NBA career scoring list ranks every player in league history by total points scored over regular-season games. The list has been kept since the league's first season, and only a small group of players has ever reached the top of it. The standings are refreshed after each game, so the totals below track the most recent completed season rather than any single night.
+Scoring totals grow slowly because a career is long and the schedule is finite. Players near the top of the list appeared in many seasons and rarely missed games. The current leader passed the previous record holder during a regular-season game, and the gap to the rest of the field is expected to widen while that career continues.
+Playoff points are tracked separately and are not part of these standings. Ties are broken by games played. The table below lists the current career leader.
+# Career points leaders
+| Player | Points |
+| --- | --- |
+| LeBron James | 42184 |
+
+Records cover regular-season games only. Totals are refreshed after each game.
+`;
+
 // ── upstream fixture table: host -> (pathname, searchParams) => shape|null ──
 export const UPSTREAM = {
   'en.wikipedia.org': (pathname, q) => {
@@ -108,6 +174,16 @@ export const UPSTREAM = {
           ],
         },
       });
+    }
+    if (pathname.startsWith('/wiki/')) {
+      const title = decodeURIComponent(pathname.replace('/wiki/', '').replace(/_/g, ' '));
+      return asText(`Title: ${title}
+URL Source: https://en.wikipedia.org${pathname}
+Markdown Content:
+${title} is a synthetic fixture article served by the test fixture server. Its prose exists so the application's page reads resolve instead of 404ing. The article carries several paragraphs of neutral synthetic text so its answer sits well past the first 800 characters, matching how real articles place their facts below the fold. The subject is described in plain sentences and carries no special structure beyond a short summary section near the end.
+## Summary
+The article states one plain fact about itself so a reader that parses headings and text sees the same shape as a real page.
+`);
     }
     if (pathname.startsWith('/api/rest_v1/page/summary/')) {
       return asJson({ extract: 'A synthetic summary for the fixture article.', type: 'standard' });
@@ -216,8 +292,25 @@ export const UPSTREAM = {
 
   'endoflife.date': () => asJson(['nodejs', 'python', 'postgresql', 'synthetic-product']),
 
-  // js/search.js jinaHelper() fetches r.jina.ai/<target-url>: the path IS the target.
-  'r.jina.ai': () => asText('Title: Synthetic Jina fetch\n\nSynthetic page text for the fixture target.'),
+  // The SERP's destination pages: js/search.js readPage() fetches these
+  // directly, and the r.jina.ai branch below serves the same render when a
+  // direct read cannot. Every path returns the reader-shaped answer page.
+  'www.basketball-reference.com': (pathname) => asText(leaderboardPage(`https://www.basketball-reference.com${pathname}`)),
+
+  // r.jina.ai: the reader answers by target — the DuckDuckGo lite SERP, or the
+  // leaderboard page the SERP's results read back through the same reader.
+  'r.jina.ai': (pathname) => {
+    const target = pathname.replace(/^\//, '');
+    const bare = target.replace(/^https?:\/\//, '');
+    return asText(bare.startsWith('lite.duckduckgo.com') ? serpPage() : leaderboardPage(target));
+  },
+
+  // Destinations the fixture corpus itself advertises: the drawer lists these
+  // links, so the application's page reads fetch them. Every path returns a
+  // small reader-shaped page, keeping reads hermetic like the SERP destinations.
+  'example.invalid': (pathname) => asText(plainPage(`https://example.invalid${pathname}`)),
+  'dbpedia.org': (pathname) => asText(plainPage(`http://dbpedia.org${pathname}`)),
+  'www.coingecko.com': (pathname) => asText(plainPage(`https://www.coingecko.com${pathname}`)),
 
   'api.duckduckgo.com': () => asJson({
     Heading: 'Synthetic instant answer',

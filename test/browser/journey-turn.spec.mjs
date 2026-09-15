@@ -251,8 +251,11 @@ test('@turn Stop during streaming: the released tail changes nothing and the com
 
 test('@turn Stop during the search ends the turn before any model call', async ({ page }) => {
   // One delayed Source keeps the mandated first search in flight while Stop is
-  // pressed (the fixture drives the delay; no sleep in the test).
-  await fixture.setSource('hn.algolia.com', { delayMs: 1500 });
+  // pressed (the fixture drives the delay; no sleep in the test). The delayed
+  // origin must be one this question's fan-out actually schedules: intent
+  // routing (ADR 0013) makes HN code-intent-only, so delay the always-on
+  // Wikipedia Source instead.
+  await fixture.setSource('en.wikipedia.org', { delayMs: 1500 });
   const app = await bootApp(page);
 
   await app.ask('Stop this question during its search');

@@ -8,7 +8,7 @@ import { initEngine, runTurn, checkAccess, stop, shouldUseProxy,
 import { loadCatalog, applyView, visibleModel, catalogSize, newestFreeModelId,
   humanCtx, money, MASKS, SORTS, DEFAULT_DESC } from './models.js';
 import { renderMarkdown, highlightCode, renderFinal } from './markdown.js';
-import { parseBlocks } from './search.js';
+import { supporting } from './sources.js';
 import { announceStatus } from './a11y.js';
 import { DEFAULT_PERSONA, APPLICATION_POLICY } from './persona.js';
 import { checkProse, correctionPrompt, integrityPreserved } from './ste.js';
@@ -405,20 +405,6 @@ function setBusy(value) {
   dom.send.setAttribute('aria-label', value ? 'Stop' : 'Send message');
 }
 
-function turnSources(t) {
-  const out = [];
-  const seen = new Set();
-  try {
-    for (const block of parseBlocks(t.markdown)) {
-      const url = String(block.url || '');
-      if (!url || seen.has(url)) continue;
-      seen.add(url);
-      out.push({ title: block.title || url, url, snippet: String(block.snippet || '').slice(0, 300) });
-    }
-  } catch { /* a malformed block list never breaks the answer */ }
-  return out;
-}
-
 function persistTurn(t) {
   const rec = S.getChat(t.chatId);
   if (!rec) return;
@@ -432,7 +418,7 @@ function persistTurn(t) {
     const msg = {
       role: 'assistant',
       content: t.answerText,
-      sources: turnSources(t),
+      sources: t.sources,
       modelUsed: t.model,
       wording: t.builtin ? (t.wording || 'original') : undefined,
     };
@@ -461,8 +447,11 @@ function queuePaint(t) {
 function onTurnEvent(t, ev) {
   // State that must survive a chat switch (the persist points read it).
   if (ev.type === 'research-finished') {
-    t.markdown += ev.markdown || '';
     for (const failure of ev.failures || []) if (failure && !t.failures.includes(failure)) t.failures.push(failure);
+  } else if (ev.type === 'sources') {
+    // Full registry snapshot after each mutation (failed reads included); the
+    // drawer filters it, persistence keeps it whole.
+    t.sources = Array.isArray(ev.list) ? ev.list.slice() : t.sources;
   } else if (ev.type === 'round-final') {
     t.answerText = ev.text;
     t.settled = true;
@@ -503,11 +492,11 @@ function onTurnEvent(t, ev) {
       if (t.pass && t.card) {
         t.pass = false;
         t.wording = 'checked';
-        t.card.finalize({ text: ev.text, wording: 'checked', sources: turnSources(t), failures: t.failures });
+        t.card.finalize({ text: ev.text, wording: 'checked', sources: supporting(t.sources), failures: t.failures });
       } else {
         t.cardFinal = true;
         if (!t.card) t.card = newAnswerCard(t.model);
-        t.card.finalize({ text: ev.text, sources: turnSources(t), failures: t.failures });
+        t.card.finalize({ text: ev.text, sources: supporting(t.sources), failures: t.failures });
       }
       setProgress('Answer ready');
       break;
@@ -558,7 +547,7 @@ function startTurn(text, { retry = false, model, useProxy }) {
   const t = {
     chatId: rec.id, text, model, builtin, useProxy,
     userPersisted: retry, assistantIdx: -1,
-    answerText: '', wording: '', markdown: '', failures: [],
+    answerText: '', wording: '', failures: [], sources: [],
     card: null, cardFinal: false, pass: false, acc: '', settled: false, finished: false,
   };
   turn = t;
