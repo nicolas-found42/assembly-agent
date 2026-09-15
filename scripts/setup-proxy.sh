@@ -12,6 +12,11 @@ set -euo pipefail
 # Wizard library: delightful, consistent UX, identical across every wizard.
 # ──────────────────────────────────────────────────────────────────────────
 
+# The wizard library's palette is a fixed, byte-identical block in every generated wizard;
+# this wizard's stages use all of it except RED, so the assignment is deliberately kept.
+# Review condition: drop this directive if the wizard template is regenerated or a stage here
+# starts colourising an error message.
+# shellcheck disable=SC2034
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
   BLUE=$(tput setaf 4); GREEN=$(tput setaf 2); YELLOW=$(tput setaf 3); RED=$(tput setaf 1)

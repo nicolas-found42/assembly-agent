@@ -1,34 +1,43 @@
 #!/usr/bin/env bash
 # scripts/lint.sh — `npm run lint`: the focused, local-or-CI lint gate (campaign R08.1).
 #
-#   tools       pinned, checksum-verified actionlint + zizmor in .tools/ (installer below)
+#   tools       pinned, checksum-verified actionlint + zizmor + shellcheck in .tools/
+#               (installer below)
 #   actionlint  every .github/workflows/*.yml; every finding is an error, no -ignore flags
 #   zizmor      Actions security over .github/workflows/ (pedantic persona); the campaign's
 #               audit set is gated, every other finding is printed as advisory
 #   invariants  scripts/workflow-invariants.mjs: the statically provable workflow invariants
 #               (pins, timeouts, permissions, publication gating, secrets, required context,
-#               concurrency, continue-on-error)
+#               unconditional required job, no-rebuild publisher, freshness gate, snapshot
+#               auto-accept, concurrency, continue-on-error)
 #   js          `node --check` (Node's own parser) over the repository's .js/.mjs sources
 #   shell       `bash -n` over build.sh and the repository's .sh scripts
+#   `shellcheck` static analysis of the repository's own .sh scripts (build.sh, scripts/*.sh)
+#               at `-S warning` — the deploy/build path actionlint never reaches, because it
+#               only inspects the shell embedded in workflow run: blocks
 #   html        dependency-free structural check of index.html: tag balance, no external
 #               origin, id/aria contract
 #
-# Output: one attributed PASS/FAIL line per section, then `LINT PASS|FAIL (n/7 sections)`.
+# Output: one attributed PASS/FAIL line per section, then `LINT PASS|FAIL (n/8 sections)`.
 # Exit 0 only when every section passes. No CI-only environment variables are required.
 #
 # Suppressions: there are none here. actionlint runs without -ignore; zizmor runs without
 # --no-<audit> flags and without an ignore configuration (if .github/zizmor.yml ever appears it
 # is reported, not silently honored). The zizmor gate is an explicit list of audit ids the
 # campaign must fail on — see ZIZMOR_GATED_AUDITS — and unlisted findings are still printed.
+# The shellcheck section excludes no rule globally either: a script that must keep a
+# deliberate pattern carries its own inline disable with a written reason.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+# Failing here would silently analyse the wrong tree, so a failed cd is fatal (SC2164).
+cd "$ROOT" || exit 1
 
 TOOLS_DIR="${LINT_TOOLS_DIR:-$ROOT/.tools}"
 ACTIONLINT="$TOOLS_DIR/bin/actionlint"
 ZIZMOR="$TOOLS_DIR/bin/zizmor"
+SHELLCHECK="$TOOLS_DIR/bin/shellcheck"
 WORKFLOWS_DIR="${LINT_WORKFLOWS_DIR:-.github/workflows}"
 
 # Audit ids this gate fails on. Everything else zizmor reports is printed as advisory: the
@@ -63,17 +72,18 @@ run_section() { # $1 id, $2 title, $3 function
 
 # ---------------------------------------------------------------------------- tools
 section_tools() {
-  if [ ! -x "$ACTIONLINT" ] || [ ! -x "$ZIZMOR" ]; then
+  if [ ! -x "$ACTIONLINT" ] || [ ! -x "$ZIZMOR" ] || [ ! -x "$SHELLCHECK" ]; then
     echo "tool cache incomplete (${TOOLS_DIR}); installing from the pinned, verified releases"
   fi
   bash "$ROOT/scripts/install-lint-tools.sh" || return 1
-  local a z
+  local a z s
   a="$("$ACTIONLINT" -version 2>&1 | head -n 1)"
   z="$("$ZIZMOR" --version 2>&1 | tail -n 1)"
+  s="$("$SHELLCHECK" --version 2>&1 | awk '/^version:/{print $2}')"
   command -v shellcheck >/dev/null 2>&1 \
-    && echo "actionlint shell integration: shellcheck $(shellcheck --version | awk '/^version:/{print $2}')" \
-    || echo "actionlint shell integration: shellcheck NOT FOUND — embedded run: blocks are only syntax-checked by bash -n below"
-  echo "SUMMARY: actionlint ${a}, ${z}"
+    && echo "actionlint shell integration: shellcheck $(shellcheck --version | awk '/^version:/{print $2}') on PATH" \
+    || echo "actionlint shell integration: shellcheck not on PATH — run: blocks are only syntax-checked by bash -n below (the pinned $s in $TOOLS_DIR/bin is used by the shellcheck section)"
+  echo "SUMMARY: actionlint ${a}, ${z}, shellcheck ${s}"
   return 0
 }
 
@@ -214,6 +224,28 @@ section_shell() {
   return "$rc"
 }
 
+# --------------------------------------------------------------------- shell analysis
+# The repository's own shell scripts — the deploy/build path above all, which no other
+# section reaches: actionlint only inspects the shell embedded in workflow run: blocks.
+# `-S warning` catches the defects that matter (unquoted expansions, dead code, wrong
+# test operators) without the style churn that would push the repo toward blanket
+# disables. Same file list as the `bash -n` section above, on purpose.
+section_shellcheck() {
+  local files=() f out rc=0 n=0 version
+  while IFS= read -r f; do files+=("$f"); done < <(collect_sh)
+  [ "${#files[@]}" -gt 0 ] || { echo "no shell scripts found"; return 1; }
+  version="$("$SHELLCHECK" --version 2>&1 | awk '/^version:/{print $2}')"
+  for f in "${files[@]}"; do
+    n=$((n + 1))
+    if ! out="$("$SHELLCHECK" -S warning --format=gcc "$f" 2>&1)"; then
+      printf '%s\n' "$out"
+      rc=1
+    fi
+  done
+  echo "SUMMARY: ${n} script(s) analysed by shellcheck ${version} (-S warning)"
+  return "$rc"
+}
+
 # ------------------------------------------------------- executable workflow invariants
 section_invariants() {
   local out rc ids
@@ -232,7 +264,10 @@ section_invariants() {
 # file because this slice owns exactly three scripts.
 section_html() {
   # LINT_HTML_FILES is the negative-test seam (same idea as --manifest/--workflows elsewhere in
-  # the campaign); the default is the real page.
+  # the campaign); the default is the real page. The value is a deliberate space-separated file
+  # list, so the unquoted expansion is the point. Review condition: drop this directive if the
+  # variable ever holds a single fixed path instead of a list.
+  # shellcheck disable=SC2206
   local files=(${LINT_HTML_FILES:-index.html})
   [ -e "${files[0]}" ] || { echo "index.html not found"; return 1; }
   LINT_HTML_FILES="${files[*]}" node --input-type=module - <<'NODE'
@@ -422,10 +457,10 @@ NODE
 }
 
 # ------------------------------------------------------------------------------ run
-SECTIONS=7
+SECTIONS=8
 printf 'LINT — %s section(s), repository %s\n\n' "$SECTIONS" "$ROOT"
 
-run_section tools "pinned actionlint + zizmor" section_tools
+run_section tools "pinned actionlint + zizmor + shellcheck" section_tools
 if [ "$sections_passed" -eq 0 ]; then
   printf '\nLINT FAIL (0/%s sections) — the lint tools could not be installed; nothing else was checked\n' "$SECTIONS"
   exit 1
@@ -435,6 +470,7 @@ run_section zizmor "workflow security" section_zizmor
 run_section invariants "workflow invariants (static)" section_invariants
 run_section js "JavaScript syntax (node --check)" section_js
 run_section shell "shell syntax (bash -n)" section_shell
+run_section shellcheck "shell analysis (shellcheck -S warning)" section_shellcheck
 run_section html "index.html structure and contract" section_html
 
 if [ "$failures" -eq 0 ]; then
