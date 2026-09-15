@@ -1,6 +1,6 @@
 # ASM Agent
 
-Static amber CRT chat that talks to OpenRouter through a WAT engine. The context covers chats, the assistant library, web research, the wording check, the model catalog, storage v2, and free-tier access.
+Static amber CRT chat that talks to OpenRouter through a WAT engine. The context covers chats, the assistant library, web research, the wording check, the model catalog, storage v2, and free-tier access — plus the release vocabulary a maintainer must not get wrong: the required gate, test classes, the staged artifact and its promotion guard.
 
 ## Language
 
@@ -218,3 +218,43 @@ _Avoid_: notch padding, viewport inset
 **Reflow**:
 The 320px / 200% zoom layout guarantee (WCAG 1.4.10) that status segments wrap or scroll, dialogs become full-width overlays, and `body {overflow:hidden}` does not permanently hide content.
 _Avoid_: responsive wrap, mobile reflow
+
+**Required Gate**:
+The one required command, `npm run verify` (`scripts/verify.mjs`), run by the `build-and-test` job. It declares the required step list — manifest validation, toolchain, build, the required Test Classes, the promotion guard, dependency and sentinel checks, lint, audit — and every step runs even after a failure. No workflow YAML restates the steps, and a missing prerequisite fails the gate instead of being skipped.
+_Avoid_: full test run, CI suite, pipeline
+
+**Test Class**:
+One of the five runner scopes: `offline`, `worker` and `browser` are required; `scheduled-browser` and `live` are optional. A class is executed by `scripts/run-tests.mjs`, which rejects `.only`, `.skip`, `.todo` and retry-only passes in the required classes.
+_Avoid_: suite, tier, job, stage
+
+**Test Manifest**:
+`test/manifest.json`: the single declaration of which files and suites belong to which Test Class. The workflow files contain no test file lists, and a runnable file under `test/` that is not listed fails the gate.
+_Avoid_: test list, CI matrix, discovery
+
+**Staged Artifact**:
+`_site/`, assembled once by `npm run build` from the allowlist in `scripts/build-site.sh`. It is immutable: nothing adds files to it or injects build metadata after staging. Its identity is `artifacts/site-inventory.json` (a sha256 per file plus one `treeDigest` over the sorted list) and `_site/build-info.json` (commit, WASM and lockfile digests, dependency versions); the promotion guard is `node scripts/site-inventory.mjs --verify _site`, run after testing, which fails on any byte that changed.
+_Avoid_: build output, dist, bundle, upload
+
+**Verified Candidate**:
+The commit whose `build-and-test` run produced the Staged Artifact being published. It must still be the tip of `main` when the publisher runs, and the publisher job holds no checkout and executes no test — it consumes the artifact the gate verified.
+_Avoid_: deploy commit, release, artifact
+
+**Superseded Deployment**:
+A publication run whose Verified Candidate is no longer the tip of `main`. It publishes nothing and reports an explicit no-op; the newer commit's own run publishes it. It is neither a failure nor a deployment claim.
+_Avoid_: stale deploy, skipped deploy, cancelled deploy
+
+**Vendor Staging**:
+Copying a runtime library's bytes from the lockfile-installed package into `_site/vendor/**` at build time instead of loading it from a CDN. `scripts/check-deps.mjs` re-verifies the staged bytes against `node_modules` and keeps `index.html` free of version literals.
+_Avoid_: bundling, vendored dependency, CDN fallback
+
+**Pinned Toolchain**:
+The versions declared in `scripts/toolchain.mjs` (Node, WABT, runner image) and the tools installed from them. `npm run toolchain` prints each pin against the resolved version; drift is fatal in CI and reported locally.
+_Avoid_: tool versions, requirements, dependencies
+
+**Live Probe**:
+A check against deployed or external systems, declared as a `live`-class manifest entry (or flagged `live`). Probes are validated by the manifest but excluded from the required classes, so live traffic can never gate a pull request; generation probes are opt-in and budgeted in `scripts/live-health.mjs`.
+_Avoid_: smoke test, e2e test, monitoring
+
+**Sanitized Rendering**:
+The one path an answer reaches the DOM through: `renderMarkdown` in `js/markdown.js` parses with the vendored marked and sanitizes with the vendored DOMPurify. Streamed model output and text fetched from arbitrary pages are untrusted, so the configuration is part of the security boundary, not a formatting detail: `FORBID_TAGS: ['style']` keeps a hostile answer from fetching a remote stylesheet (`@import`) or restyling the app around itself. Remote `img`/`video`/`audio` sources and the inline `style` attribute are deliberately still allowed — see the residual noted in the campaign report.
+_Avoid_: markdown rendering, HTML sanitizing, cleanup, escaping

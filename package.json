@@ -14,9 +14,19 @@
     "test:worker": "node scripts/run-tests.mjs --class worker",
     "test:browser": "node scripts/run-tests.mjs --class browser",
     "test:worker-unit": "npx vitest run --config test/worker/vitest.config.mjs",
+    "test:cross-browser": "node scripts/run-tests.mjs --class scheduled-browser",
+    "test:live": "node scripts/run-tests.mjs --class live",
+    "test:update-snapshots": "npx playwright test --config test/browser/playwright.config.mjs --update-snapshots",
     "manifest:check": "node scripts/validate-manifest.mjs",
+    "toolchain": "node scripts/toolchain.mjs",
+    "ci:summary": "node scripts/ci-summary.mjs",
+    "check:deps": "node scripts/check-deps.mjs",
     "lint": "bash scripts/lint.sh",
-    "audit": "node scripts/audit-policy.mjs"
+    "audit": "node scripts/audit-policy.mjs",
+    "worker:package": "node scripts/worker-package.mjs",
+    "worker:deploy": "bash scripts/worker-deploy.sh",
+    "live:health": "node scripts/live-health.mjs",
+    "incident:report": "node scripts/incident.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -26,11 +36,13 @@
     "marked": "^18.0.13"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@playwright/test": "^1.63.0",
     "axe-core": "^4.13.0",
     "vitest": "^4.1.0",
-    "wrangler": "^4.131.2"
+    "wrangler": "^4.131.2",
+    "yaml": "^2.8.3"
   },
   "allowScripts": {
     "workerd@1.20260815.1": true,

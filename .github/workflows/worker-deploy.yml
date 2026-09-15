@@ -1,0 +1,131 @@
+name: Deploy Worker (manual, opt-in)
+
+# The single production publisher for the Cloudflare Worker. It is manual-only: a
+# pull request, a push, a fork or a Dependabot commit can never reach it, and it
+# stays disabled until an owner finishes the prerequisites below. Ordinary PR
+# verification never sees these credentials.
+#
+# Owner prerequisites (names and locations only — never values):
+#   * environment `cloudflare-worker` with required reviewers (approval gate);
+#     environment secrets: CLOUDFLARE_API_TOKEN (Workers Scripts: edit on the
+#     account that owns the worker) and CLOUDFLARE_ACCOUNT_ID
+#   * repository variable `ENABLE_WORKER_DEPLOY=true` (the opt-in; unset = disabled)
+#   * Worker secret `OPENROUTER_KEY` (the operator key) set once on the Worker with
+#     `npx wrangler secret put OPENROUTER_KEY`. `wrangler.toml` declares it under
+#     `[secrets] required`, which makes wrangler warn about a missing one; the
+#     enforcement is in scripts/worker-deploy.sh, which reads `wrangler secret
+#     list` and refuses to promote a version unless the Worker has it.
+#     No workflow here writes secrets.
+#
+# Rollback: `npx wrangler versions deploy <previous-version-id>@100 --yes` — the
+# previous ids are recorded in artifacts/results/worker-deploy.json of each run.
+#
+# scripts/live-health.mjs verifies the deployed Worker non-generatively after a
+# deployment is authorised; generation probes stay in the scheduled live-health
+# workflow, where they are opt-in and budgeted.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type deploy-worker to confirm a production Worker deployment"
+        required: true
+        type: string
+
+# Read-only by default; the deployment job narrows nothing further and never gets
+# repository write permissions.
+permissions:
+  contents: read
+
+jobs:
+  deploy-worker:
+    # Four independent gates: the owner opt-in, the typed confirmation, the
+    # approved ref, and the environment's approval rules.
+    if: >-
+      vars.ENABLE_WORKER_DEPLOY == 'true' &&
+      inputs.confirm == 'deploy-worker' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: cloudflare-worker
+    permissions:
+      contents: read # check out the approved ref
+      checks: read # prove the required check passed on this commit
+    concurrency:
+      # One publisher per protected environment; a queued run waits, and an
+      # in-flight production deployment is never cancelled.
+      group: cloudflare-worker-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read declared toolchain pins
+        id: pins
+        run: |
+          set -euo pipefail
+          echo "node=$(node scripts/toolchain.mjs --pin node)" >> "$GITHUB_OUTPUT"
+      - name: Set up Node ${{ steps.pins.outputs.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+          cache: npm
+      - name: Install npm dependencies
+        # Wrangler and the packaging script come from the lockfile-pinned install.
+        run: npm ci --no-audit --no-fund
+      - name: Dry-run package and record the promoted identity
+        # Same tested source and configuration the deployment uses; the deploy
+        # script re-verifies these digests immediately before uploading.
+        run: npm run worker:package
+      - name: Deploy the verified version
+        env:
+          ENABLE_WORKER_DEPLOY: ${{ vars.ENABLE_WORKER_DEPLOY }}
+          CONFIRM_DEPLOY: ${{ inputs.confirm }}
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/worker-deploy.sh
+      - name: Summarise the deployment
+        if: always()
+        env:
+          RECORD: artifacts/results/worker-deploy.json
+          PACKAGE: artifacts/results/worker-package.json
+        run: |
+          set -euo pipefail
+          {
+            echo "### Worker deployment"
+            echo ""
+            if [ -f "$RECORD" ]; then
+              # ${...} here is JS template-literal syntax inside node -e '...'.
+              # shellcheck disable=SC2016
+              node -e '
+                const { readFileSync } = require("node:fs");
+                const r = JSON.parse(readFileSync(process.env.RECORD, "utf8"));
+                console.log(`- worker: \`${r.worker}\``);
+                console.log(`- version id: \`${r.versionId}\``);
+                console.log(`- commit: \`${r.commit}\` (${r.ref})`);
+                console.log(`- bundle digest: \`${r.bundleDigest}\``);
+                console.log(`- compatibility date: \`${r.compatibilityDate}\``);
+                console.log(`- rollback: \`${r.rollback}\``);
+              '
+            elif [ -f "$PACKAGE" ]; then
+              echo "- no version was deployed; the recorded package identity was:"
+              echo '```json'
+              cat "$PACKAGE"
+              echo '```'
+            else
+              echo "- no deployment record was produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the Worker deployment record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: worker-deploy-record
+          path: |
+            artifacts/results/worker-deploy.json
+            artifacts/results/worker-package.json
+          if-no-files-found: warn
+          retention-days: 90

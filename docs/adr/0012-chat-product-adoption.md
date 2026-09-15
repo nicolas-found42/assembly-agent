@@ -150,6 +150,22 @@ and the Pages deploy run all eight `node --test` suites (`sources`, `guard`,
 `tool-loop`, `research`, `store`, `migration`, `models`, `ste`) plus
 `node test/smoke.mjs` and `node test/a11y.mjs`; `test/a11y.browser.mjs` stays a
 manual browser harness.
+_Update (2026-09-15): the required gate is `npm run verify` and its membership is
+declared in `test/manifest.json`, not in a hand-written file list. The manual
+browser harness is superseded by the required Playwright suite in `test/browser/`
+(chromium, staging `_site/` against fixtures); `test/a11y.browser.mjs` remains only
+as a `live`-class probe that can never gate a pull request (ADR 0013)._
+
+_Also 2026-09-15: rendering is a security boundary, not a formatting detail. The
+required browser suite proved that DOMPurify's defaults kept a `<style>` element
+when it followed any prose, and that the browser then fetched the remote
+stylesheet it named — a hostile answer could leak the reader's address to a third
+party and restyle the app around itself. `renderMarkdown` in `js/markdown.js` now
+passes `FORBID_TAGS: ['style']`. Remote `img`/`video`/`audio` sources and the
+inline `style` attribute are deliberately still allowed and remain a recorded
+product decision (see the campaign report's known risks): the inline attribute
+can still name a remote `url()`, and forbidding it is a broader content decision
+than this campaign took._
 
 ## Consequences
 
@@ -157,9 +173,12 @@ manual browser harness.
   prompt, command suggestions, MEM/WAT/status inspectors, and TOK/S telemetry
   are gone. Colon-prefixed text is ordinary chat content.
 - ADR 0006's accessibility bars still hold. The static harness
-  (`test/a11y.mjs`) and the browser harness (`test/a11y.browser.mjs`) target
-  the chat DOM: transcript `role="log"`, the status announcer, the composer,
-  native `<dialog>` overlays, coarse-pointer targets, and reduced-motion rules.
+  (`test/a11y.mjs`) and the required Playwright accessibility suite
+  (`test/browser/a11y.spec.mjs`, staging `_site/` against fixtures) target the
+  chat DOM: transcript `role="log"`, the status announcer, the composer, native
+  `<dialog>` overlays, coarse-pointer targets, and reduced-motion rules. The old
+  manual `test/a11y.browser.mjs` harness remains only as a `live`-class probe and
+  can never gate a pull request (ADR 0013).
 - The static deployment stays static. The free-model Worker from ADR 0001 keeps
   serving `:free` requests with the Operator Key and refuses every other model.
   Search stays keyless and client-side (ADR 0004, 0008, 0009); no new Proxy

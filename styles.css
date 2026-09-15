@@ -1,5 +1,33 @@
 /* styles.css — ASM::AGENT chat UI. One stylesheet, .b-* namespace, amber CRT. */
 
+/* ── self-hosted webfonts (@fontsource packages, copied into assets/fonts/ by
+      scripts/build-site.sh). Family names and weights are unchanged from the
+      previous Google Fonts delivery: VT323 400 is the display face, JetBrains
+      Mono 400/700 the UI face. font-display: swap keeps first paint immediate. */
+@font-face {
+ font-family: 'VT323';
+ font-style: normal;
+ font-display: swap;
+ font-weight: 400;
+ src: url(assets/fonts/vt323-latin-400.woff2) format('woff2');
+}
+
+@font-face {
+ font-family: 'JetBrains Mono';
+ font-style: normal;
+ font-display: swap;
+ font-weight: 400;
+ src: url(assets/fonts/jetbrains-mono-latin-400.woff2) format('woff2');
+}
+
+@font-face {
+ font-family: 'JetBrains Mono';
+ font-style: normal;
+ font-display: swap;
+ font-weight: 700;
+ src: url(assets/fonts/jetbrains-mono-latin-700.woff2) format('woff2');
+}
+
 :root {
  --b-bg: #0b0600;
  --b-amber: #ffb000;

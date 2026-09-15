@@ -10,3 +10,11 @@ compatibility_date = "2024-11-01"
 # Route example: api.<domain>/* or use workers.dev for dev
 # Add route in Cloudflare dashboard after first deploy:
 #   api.your-domain.com/api/* -> asm-agent-proxy
+
+[secrets]
+# A declaration, not a runtime gate: wrangler 4.131.2 warns when a required secret
+# is absent (locally: "Missing required secrets: OPENROUTER_KEY") but a deployment
+# is not stopped by it. scripts/worker-deploy.sh enforces it by reading
+# `wrangler secret list` and refusing to promote a version while the Worker has no
+# OPENROUTER_KEY. No workflow in this repository writes a secret value.
+required = ["OPENROUTER_KEY"]

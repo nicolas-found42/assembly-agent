@@ -1,0 +1,17 @@
+{
+  "//": "Specific, owned, dated exceptions for scripts/audit-policy.mjs. Every entry names ONE advisory id (GHSA-xxxx-xxxx-xxxx) and the package it actually affects; scripts/audit-policy.mjs validates the id format, that the package matches the affected package in the audit report, that the reason is substantive, and that reviewBy has not passed. There is no pattern or wildcard form: an exception that covers several findings only does so when they are the same advisory carried through the dependency chain. Remove an entry as soon as the finding is gone - a stale entry is reported by the gate.",
+  "exceptions": [
+    {
+      "id": "GHSA-rgj7-g3m4-5g8c",
+      "package": "sharp",
+      "reason": "sharp (<0.35.4) and the two libheif advisories it carries (GHSA-g89c-p67h-r497, GHSA-2jg2-4ch7-h545) arrive only as a devDependency transitive path: @cloudflare/vitest-pool-workers -> miniflare -> sharp. Nothing under _site/ ships sharp (scripts/check-deps.mjs proves the staged site is exactly marked, DOMPurify, highlight.js and the two @fontsource packages), the Worker suite never decodes an image, and run-tests rejects live traffic, so decoding attacker-controlled HEIF is not reachable from this repository's code or CI. npm offers no upgrade: the only 'fix' is a semver-major downgrade of @cloudflare/vitest-pool-workers to 0.8.30, which predates the 0.22 outbound-fetch mocking API the Worker runtime tests are built on. Re-review when @cloudflare/vitest-pool-workers ships a release whose sharp dependency is >= 0.35.4.",
+      "owner": "@nicolas-found42",
+      "reviewBy": "2026-12-14",
+      "references": [
+        "https://github.com/advisories/GHSA-rgj7-g3m4-5g8c",
+        "https://github.com/advisories/GHSA-g89c-p67h-r497",
+        "https://github.com/advisories/GHSA-2jg2-4ch7-h545"
+      ]
+    }
+  ]
+}

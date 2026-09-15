@@ -1,0 +1,7 @@
+data: not json at all
+data: {"broken"
+data:
+data:   
+data: x [DONE]
+data: {"choices":[{"delta":{"content":"survivor"}}]}
+data: [DONE]

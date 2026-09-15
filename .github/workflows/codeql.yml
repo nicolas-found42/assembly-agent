@@ -1,0 +1,66 @@
+name: CodeQL
+
+# Code scanning for the two supported surfaces in this repository:
+#   * javascript-typescript — the browser app under js/ and the Worker at worker/
+#   * actions              — the workflows themselves
+#
+# This is repository-side "advanced setup": GitHub's account-level *default setup*
+# for code scanning is inspected by scripts/settings-apply.sh and must stay
+# `not-configured` while this workflow exists (two publishers would double-report).
+#
+# Engine coverage is deliberately NOT claimed here: the WAT engine has no CodeQL
+# extractor. src/agent.wat is covered by `wasm-validate`, scripts/abi-check.mjs and
+# the engine stream suites — a green JavaScript scan says nothing about it.
+#
+# Pin updates: Dependabot's github-actions surface maintains the SHA below. Verify
+# with `gh api repos/github/codeql-action/git/ref/tags/v4` plus the annotated-tag
+# dereference before accepting a bump.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    # Same pinned runner image as the required gate (scripts/toolchain.mjs declares
+    # it): a named image is not an immutable system image, but it does not float
+    # under the repository's feet the way a moving label does.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # read the analysed source
+      actions: read # the `actions` language pack reads workflow metadata
+      security-events: write # upload the SARIF results this job produces (analysis jobs only)
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: ${{ matrix.language }}
+      - name: Autobuild
+        if: matrix.language != 'actions'
+        uses: github/codeql-action/autobuild@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - name: Analyze
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          category: /language:${{ matrix.language }}

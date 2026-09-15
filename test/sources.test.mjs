@@ -187,7 +187,8 @@ function reset(){ clearCache(); if (jinaLimiter && jinaLimiter._reset) jinaLimit
   });
   const r = await webSearch('nfl game', {transport});
   assert.ok(r.failures.includes('espn'), 'espn failure recorded');
-  assert.ok(r.markdown.includes('### [JINA WEB]') || r.markdown.length>=0,'other sources still present, no throw');
+  assert.ok(r.markdown.includes('### [JINA WEB]'), 'a healthy source still contributes when another source fails');
+  assert.ok(!r.markdown.includes('### [ESPN]'), 'the failed source contributes no block');
 }
 
 // openmeteo chain happy with memo
@@ -360,6 +361,21 @@ function reset(){ clearCache(); if (jinaLimiter && jinaLimiter._reset) jinaLimit
   assert.ok(r.failures.includes('jinaweb'), 'jinaweb failure recorded');
   assert.ok(!r.failures.includes('jinanews'), 'jinanews heuristic skip not a failure');
   assert.ok(!r.markdown.includes('### [JINA WEB]'), 'no jinaweb block on error');
+}
+{
+  // jinaweb reader answers 200 with nothing to extract: no block, so the answer
+  // footer reports the documented "no search results" state instead of counting a
+  // contentless Source. Regression for the empty search state (journey 4).
+  reset();
+  const transport = makeFake({
+    'r.jina.ai/https://lite.duckduckgo.com': '',
+    'r.jina.ai/https://news.google.com': '   \n  ',
+    'endoflife.date/api/all.json': []
+  });
+  const r = await webSearch('any random query', {transport});
+  assert.ok(!r.markdown.includes('### [JINA WEB]'), 'empty reader text contributes no block');
+  assert.ok(!r.markdown.includes('— via Jina Reader'), 'no attribution footer without content');
+  assert.equal(r.failures.includes('jinaweb'), false, 'an empty answer is not a failure');
 }
 {
   // cache smoke: second call hits sessionStorage, no second fetch

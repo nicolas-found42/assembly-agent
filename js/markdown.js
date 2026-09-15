@@ -12,7 +12,20 @@ export function renderMarkdown(container, text) {
   } catch {
     html = `<p>${text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/\n/g, '<br>')}</p>`;
   }
-  container.innerHTML = PURIFY().sanitize(html, { ADD_ATTR: ['target'] });
+  container.innerHTML = PURIFY().sanitize(html, {
+    ADD_ATTR: ['target'],
+    // Streamed answers are untrusted: model output plus text fetched from
+    // arbitrary web pages. DOMPurify's default allowlist keeps <style>, and CSS
+    // can fetch (`@import url(...)`) — a payload placed after any prose is parsed
+    // into <body> and survives, so a hostile answer could leak the reader's
+    // address to a third party and restyle the app around the answer. Markdown
+    // answers never need it: highlighting is class-based, layout lives in
+    // styles.css. Remote <img>/<video>/<audio> sources and the inline `style`
+    // attribute stay allowed on purpose — media is a legitimate answer content,
+    // and forbidding inline styles is a broader product decision (recorded in the
+    // campaign report, not taken here).
+    FORBID_TAGS: ['style'],
+  });
 }
 
 /** Highlight code blocks; during streaming throttle to 500ms per element. */

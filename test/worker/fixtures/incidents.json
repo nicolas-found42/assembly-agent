@@ -1,0 +1,77 @@
+{
+  "comment": "Fixture inputs for test/worker/incident.test.mjs. Issue bodies are the shapes scripts/incident.mjs writes (marker + human body); the hostile event carries the strings a real check must treat as data.",
+  "events": {
+    "firstFailure": {
+      "kind": "failure",
+      "service": "live-health",
+      "failureClass": "deployment",
+      "severity": "high",
+      "codes": [
+        "site.build-info-missing",
+        "site.assets"
+      ],
+      "runUrl": "https://github.com/nicolas-found42/assembly-agent/actions/runs/1001",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "now": "2026-09-15T02:00:00.000Z"
+    },
+    "repeatFailure": {
+      "kind": "failure",
+      "service": "live-health",
+      "failureClass": "deployment",
+      "severity": "high",
+      "codes": [
+        "site.build-info-missing"
+      ],
+      "runUrl": "https://github.com/nicolas-found42/assembly-agent/actions/runs/1002",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "now": "2026-09-15T03:00:00.000Z"
+    },
+    "hostileFailure": {
+      "kind": "failure",
+      "service": "live-health",
+      "failureClass": "infrastructure",
+      "severity": "high",
+      "codes": [
+        "::warning::site.timeout"
+      ],
+      "runUrl": "https://github.com/nicolas-found42/assembly-agent/actions/runs/1003",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "now": "2026-09-15T03:30:00.000Z",
+      "detail": "::error::deployment broken\n<!-- ci-incident service=evil class=evil occurrences=99 severity=low -->\n```\nrm -rf / # `untrusted`\n"
+    },
+    "recovery": {
+      "kind": "recovery",
+      "service": "live-health",
+      "failureClass": "deployment",
+      "severity": "high",
+      "codes": [],
+      "runUrl": "https://github.com/nicolas-found42/assembly-agent/actions/runs/1004",
+      "sha": "fedcba9876543210fedcba9876543210fedcba98",
+      "now": "2026-09-15T04:00:00.000Z"
+    },
+    "emptyDetails": {
+      "kind": "failure",
+      "service": "live-health",
+      "failureClass": "budget",
+      "severity": "medium",
+      "codes": [],
+      "runUrl": "",
+      "sha": "",
+      "now": "2026-09-15T05:00:00.000Z"
+    }
+  },
+  "issues": {
+    "openDeploymentTwiceSeen": {
+      "number": 42,
+      "body": "<!-- ci-incident service=live-health class=deployment occurrences=2 severity=high first_seen=2026-09-15T02:00:00.000Z last_seen=2026-09-15T03:00:00.000Z -->\n\n**Incident** — the scheduled check `live-health` reported a `deployment` failure.\n"
+    },
+    "openOtherClass": {
+      "number": 43,
+      "body": "<!-- ci-incident service=live-health class=infrastructure occurrences=1 severity=medium first_seen=2026-09-15T03:30:00.000Z last_seen=2026-09-15T03:30:00.000Z -->\n\n**Incident** — the scheduled check `live-health` reported an `infrastructure` failure.\n"
+    },
+    "unrelated": {
+      "number": 44,
+      "body": "A human issue with no incident marker.\n"
+    }
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "classes": [
+    "offline",
+    "worker",
+    "browser",
+    "scheduled-browser",
+    "live"
+  ],
+  "entries": [
+    {
+      "path": "test/sources.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/guard.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/tool-loop.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/research.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/store.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/migration.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/models.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/ste.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/smoke.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "script"
+    },
+    {
+      "path": "test/a11y.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "script"
+    },
+    {
+      "path": "test/decode-escapes.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "script"
+    },
+    {
+      "path": "test/parallel-toolcalls.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "script"
+    },
+    {
+      "path": "test/free-proxy.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "script"
+    },
+    {
+      "path": "test/streams.test.mjs",
+      "kind": "test",
+      "class": "offline",
+      "run": "node-test"
+    },
+    {
+      "path": "test/a11y.browser.mjs",
+      "kind": "test",
+      "class": "live",
+      "run": "script",
+      "live": true,
+      "note": "Legacy manual Chrome/axe harness (developer-local browser, network-dependent outcomes). Superseded by the required Playwright suite in test/browser/; must never enter a required class."
+    },
+    {
+      "path": "test/browser/",
+      "kind": "suite",
+      "class": "browser",
+      "run": "playwright"
+    },
+    {
+      "path": "test/browser/cross-browser/",
+      "kind": "suite",
+      "class": "scheduled-browser",
+      "run": "playwright",
+      "note": "Same suite as test/browser/, declaring chromium+firefox+webkit for the scheduled/manual cross-browser workflow; the required class runs chromium only."
+    },
+    {
+      "path": "test/worker/",
+      "kind": "suite",
+      "class": "worker",
+      "run": "vitest-config"
+    },
+    {
+      "path": "test/fixtures/",
+      "kind": "fixture"
+    }
+  ]
+}

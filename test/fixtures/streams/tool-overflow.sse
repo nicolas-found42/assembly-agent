@@ -1,0 +1,10 @@
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"syn_0","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q0\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"syn_1","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q1\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":2,"id":"syn_2","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q2\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":3,"id":"syn_3","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q3\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":4,"id":"syn_4","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q4\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":5,"id":"syn_5","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q5\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":6,"id":"syn_6","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q6\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":7,"id":"syn_7","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q7\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":8,"id":"syn_8","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"q8\"}"}}]}}]}
+data: [DONE]
