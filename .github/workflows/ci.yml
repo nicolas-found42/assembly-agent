@@ -205,7 +205,7 @@ jobs:
             echo "- site URL: ${PAGE_URL:-not reported}"
             echo "- main tip after publication: \`${tip}\`"
             if [ "${tip}" != "${CANDIDATE}" ]; then
-              echo "- note: \`main\` advanced to \`${tip}\` during this publication; that commit's own run publishes after this one completes. This deployment is not rolled back — see the rollback note in .scratch/ci/evidence/workflows.md."
+              echo "- note: \`main\` advanced to \`${tip}\` during this publication; that commit's own run publishes after this one completes. This deployment is not rolled back — see the rollback procedure in README.md (Operations → Rollback) and docs/ci-campaign-report.md."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -138,13 +138,13 @@ runs one step to reproduce a CI failure locally.
 | --- | --- |
 | `npm run build` | stages the allowlisted production tree into `_site/` and writes `artifacts/site-inventory.json`; the allowlist, budgets and post-stage validation are in `scripts/build-site.sh` |
 | `npm run serve` | serves `_site/` at `/assembly-agent/`; prints `READY <url>`, refuses a taken port |
-| `npm run verify` | the required gate: build → required classes → artifact identity → lint → audit |
+| `npm run verify` | the required gate: manifest → toolchain → build → offline → worker → browser → packaging → deps → lint → audit → sentinel |
 | `npm run test:offline` | required class: the `node --test` files and engine scripts |
 | `npm run test:worker` | required class: the Worker suite in real workerd |
 | `npm run test:browser` | required class: the Playwright suite over `_site/`, chromium |
 | `npm run test:cross-browser` | scheduled class: the same browser suite on firefox + webkit |
 | `npm run test:live` | operational probes; never part of the required gate |
-| `npm run lint` | pinned actionlint + zizmor, workflow invariants, js/shell/html checks |
+| `npm run lint` | pinned actionlint + zizmor + shellcheck, workflow invariants, js/shell/html checks |
 | `npm run audit` | vulnerability policy (`scripts/audit-policy.mjs`; exceptions and their owners in `scripts/audit-policy.exceptions.json`) |
 | `npm run check:deps` | lockfile ↔ `node_modules` ↔ vendored bytes ↔ staged site agreement |
 | `npm run toolchain` | the declared pins against the versions actually resolved |
@@ -229,7 +229,9 @@ locally (`--expect-commit <sha>` separates a stale artifact from a broken new on
 The required gate and the Pages publisher need no repository secret: they use the
 per-run `GITHUB_TOKEN` (read-only outside the deploy job) and an OIDC token for
 Pages. Environments: `github-pages` is live and allows only `main`;
-`cloudflare-worker` is still pending (see activation below).
+`cloudflare-worker` exists with a `main`-only branch policy and a required reviewer,
+and stays inert until its secrets and `ENABLE_WORKER_DEPLOY` are set (see activation
+below).
 
 **Artifact identity and promotion.** `_site/` is staged once, by `npm run build`,
 and is immutable: nothing adds files to it afterwards, and no deployment job builds
@@ -266,9 +268,9 @@ Neither path rolls back automatically.
 **Owner-only activation still pending.** These are repository and Cloudflare
 settings, not code; until they exist the related workflow stays a no-op:
 
-- the `cloudflare-worker` environment, with required reviewers;
 - environment secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts: edit) and
-  `CLOUDFLARE_ACCOUNT_ID` on that environment;
+  `CLOUDFLARE_ACCOUNT_ID` on the `cloudflare-worker` environment (the environment
+  itself now exists with a `main`-only branch policy and a required reviewer);
 - repository variable `ENABLE_WORKER_DEPLOY=true`;
 - Worker secret `OPENROUTER_KEY` on the deployed Worker;
 - optional: `LIVE_HEALTH_ENABLE_GENERATION` and its budget variables, and custom
@@ -277,8 +279,12 @@ settings, not code; until they exist the related workflow stays a no-op:
 `bash scripts/settings-apply.sh` reports (and with `--apply`, sets) the
 administrator settings this contract depends on — Action SHA pinning, the default
 `GITHUB_TOKEN` scope, Dependabot security updates, CodeQL default setup staying off,
-and the required-check context. A denied read is reported as "not verified", never
-as "absent".
+the required-check context, the `github-pages` branch policy and each
+`cloudflare-worker` prerequisite by name. A denied read is reported as "not
+verified", never as "absent".
+
+The verification campaign's status, evidence and activation record is
+[`docs/ci-campaign-report.md`](docs/ci-campaign-report.md).
 
 ## Notes
 

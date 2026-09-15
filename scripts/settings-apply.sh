@@ -173,8 +173,50 @@ if [ -n "$envs" ]; then
     *,github-pages,*) ok "protected environment 'github-pages' exists" ;;
     *) echo "  WARN     environment 'github-pages' is missing; Pages publication is unprotected."; drift=1 ;;
   esac
+  # Existence is not the property that matters: the deploy job's `if:` guard is the
+  # first line of defence and this branch policy is the second. Read it.
+  if pages_policies=$(gh api "repos/$REPO/environments/github-pages/deployment-branch-policies" \
+    --jq '[.branch_policies[] | select(.type == "branch") | .name] | join(",")' 2>/dev/null); then
+    case ",$pages_policies," in
+      ,main,) ok "github-pages allows only the 'main' branch" ;;
+      *)
+        echo "  WARN     github-pages branch policies are '${pages_policies:-<none>}'; expected exactly 'main'."
+        echo "           A wider policy would let another ref publish through the environment."
+        drift=1
+        ;;
+    esac
+  else
+    echo "  UNVERIFIED  could not read the github-pages branch policies"
+    denied=1
+  fi
   case ",$envs," in
-    *,cloudflare-worker,*) ok "protected environment 'cloudflare-worker' exists" ;;
+    *,cloudflare-worker,*)
+      ok "protected environment 'cloudflare-worker' exists"
+      # The environment is the approval gate; it is inert until the credentials and
+      # the opt-in variable exist. Report each one by name — never a value.
+      if cf_secrets=$(gh api "repos/$REPO/environments/cloudflare-worker/secrets" \
+        --jq '[.secrets[].name] | join(",")' 2>/dev/null); then
+        for secret in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+          case ",$cf_secrets," in
+            *",$secret,"*) ;;
+            *) echo "  PENDING  environment secret $secret is not set on cloudflare-worker" ;;
+          esac
+        done
+      else
+        echo "  UNVERIFIED  could not read the cloudflare-worker secrets"
+        denied=1
+      fi
+      if cf_var=$(gh api "repos/$REPO/actions/variables" \
+        --jq '[.variables[] | select(.name == "ENABLE_WORKER_DEPLOY") | .value] | join(",")' 2>/dev/null); then
+        case "$cf_var" in
+          true | 1) ok "ENABLE_WORKER_DEPLOY is set: Worker deployment is armed" ;;
+          *) echo "  PENDING  repository variable ENABLE_WORKER_DEPLOY is not 'true': worker-deploy.yml stays disabled" ;;
+        esac
+      else
+        echo "  UNVERIFIED  could not read repository variables"
+        denied=1
+      fi
+      ;;
     *)
       echo "  PENDING  environment 'cloudflare-worker' does not exist. Worker deployment"
       echo "           (.github/workflows/worker-deploy.yml) stays disabled until an owner creates it"
