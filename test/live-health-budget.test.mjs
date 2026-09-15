@@ -22,64 +22,64 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // name -> the hard ceiling scripts/live-health.mjs prints in its usage text and enforces in HARD_LIMITS.
 const CEILINGS = {
- LIVE_HEALTH_MAX_REQUESTS: 1,
- LIVE_HEALTH_MAX_TOKENS: 128,
- LIVE_HEALTH_MAX_DURATION_MS: 60_000,
- LIVE_HEALTH_MAX_CONCURRENCY: 1,
+  LIVE_HEALTH_MAX_REQUESTS: 1,
+  LIVE_HEALTH_MAX_TOKENS: 128,
+  LIVE_HEALTH_MAX_DURATION_MS: 60_000,
+  LIVE_HEALTH_MAX_CONCURRENCY: 1,
 };
 
 /** Run the real CLI with exactly one budget variable set (the others are cleared, so the result does not
- *  depend on whatever the developer's shell exported). */
+  *  depend on whatever the developer's shell exported). */
 function runHealth(name, value) {
- const env = { ...process.env };
- for (const key of Object.keys(CEILINGS)) delete env[key];
- env[name] = value;
- env.LIVE_HEALTH_ENABLE_GENERATION = 'false'; // the non-generating mode is the cheapest net anyway
- return spawnSync(
-  process.execPath,
-  [
-   'scripts/live-health.mjs', '--mode', 'health',
-   '--base-url', 'https://example.invalid/', '--worker-url', 'https://example.invalid/',
-   '--json', join(tmpdir(), `live-health-budget-${process.pid}.json`),
-  ],
-  { cwd: REPO_ROOT, env, encoding: 'utf8', timeout: 30_000 },
- );
+  const env = { ...process.env };
+  for (const key of Object.keys(CEILINGS)) delete env[key];
+  env[name] = value;
+  env.LIVE_HEALTH_ENABLE_GENERATION = 'false'; // the non-generating mode is the cheapest net anyway
+  return spawnSync(
+    process.execPath,
+    [
+      'scripts/live-health.mjs', '--mode', 'health',
+      '--base-url', 'https://example.invalid/', '--worker-url', 'https://example.invalid/',
+      '--json', join(tmpdir(), `live-health-budget-${process.pid}.json`),
+    ],
+    { cwd: REPO_ROOT, env, encoding: 'utf8', timeout: 30_000 },
+  );
 }
 
 const failure = (res) => `exit ${res.status}${res.signal ? ` signal ${res.signal}` : ''}; stderr: ${res.stderr}`;
 
 for (const [name, ceiling] of Object.entries(CEILINGS)) {
- test(`${name} rejects a non-integer with the usage error before any request`, () => {
-  const res = runHealth(name, 'abc');
+  test(`${name} rejects a non-integer with the usage error before any request`, () => {
+    const res = runHealth(name, 'abc');
 
-  assert.equal(res.status, 2, failure(res));
-  assert.match(
-   res.stderr,
-   new RegExp(`LIVE-HEALTH usage error: ${name} must be a non-negative integer \\(got "abc"\\)`),
-  );
-  assert.match(res.stderr, /usage: node scripts\/live-health\.mjs/);
-  assert.equal(res.stdout, '', 'no check may run, and no report be written, before the budget is validated');
- });
+    assert.equal(res.status, 2, failure(res));
+    assert.match(
+      res.stderr,
+      new RegExp(`LIVE-HEALTH usage error: ${name} must be a non-negative integer \\(got "abc"\\)`),
+    );
+    assert.match(res.stderr, /usage: node scripts\/live-health\.mjs/);
+    assert.equal(res.stdout, '', 'no check may run, and no report be written, before the budget is validated');
+  });
 
- test(`${name} rejects a value above the hard ceiling ${ceiling}`, () => {
-  const res = runHealth(name, String(ceiling + 1));
+  test(`${name} rejects a value above the hard ceiling ${ceiling}`, () => {
+    const res = runHealth(name, String(ceiling + 1));
 
-  assert.equal(res.status, 2, failure(res));
-  assert.match(
-   res.stderr,
-   new RegExp(`LIVE-HEALTH usage error: ${name}=${ceiling + 1} exceeds the hard ceiling ${ceiling}`),
-  );
-  assert.equal(res.stdout, '', 'no check may run, and no report be written, before the budget is validated');
- });
+    assert.equal(res.status, 2, failure(res));
+    assert.match(
+      res.stderr,
+      new RegExp(`LIVE-HEALTH usage error: ${name}=${ceiling + 1} exceeds the hard ceiling ${ceiling}`),
+    );
+    assert.equal(res.stdout, '', 'no check may run, and no report be written, before the budget is validated');
+  });
 }
 
 test('the usage text names every documented budget variable and its ceiling', () => {
- const res = spawnSync(process.execPath, ['scripts/live-health.mjs', '--help'], {
-  cwd: REPO_ROOT, encoding: 'utf8', timeout: 30_000,
- });
+  const res = spawnSync(process.execPath, ['scripts/live-health.mjs', '--help'], {
+    cwd: REPO_ROOT, encoding: 'utf8', timeout: 30_000,
+  });
 
- assert.equal(res.status, 0, failure(res));
- for (const [name, ceiling] of Object.entries(CEILINGS)) {
-  assert.match(res.stdout, new RegExp(`${name}/${ceiling}`), `${name} is not documented in the usage text`);
- }
+  assert.equal(res.status, 0, failure(res));
+  for (const [name, ceiling] of Object.entries(CEILINGS)) {
+    assert.match(res.stdout, new RegExp(`${name}/${ceiling}`), `${name} is not documented in the usage text`);
+  }
 });

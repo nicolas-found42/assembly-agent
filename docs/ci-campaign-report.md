@@ -93,7 +93,7 @@ drills that lived only in the gitignored `.scratch/ci/evidence/`.
 | j | a required prerequisite fails, cancels, or unexpectedly skips | `test/ci-guards.test.mjs` pins that the required job carries no `if:` and runs the frozen gate command; `workflow-invariants` `required-job-ungated`; ADR 0013 records that a cancelled workflow is non-passing | argued from design + static invariant (no runtime cancel drill) |
 | k | a fork/Dependabot/feature-ref run reaches publication | `test/ci-guards.test.mjs` — deploy `if:` evaluated over six contexts (same-repo/fork/Dependabot PR, push to main, feature ref, `workflow_dispatch` on main): only push-to-main is truthy; `publication-gate`, `no-prod-secrets-in-pr` | committed simulation |
 | l | an older verified candidate finishes after a newer one | `test/ci-guards.test.mjs` — the freshness `run:` block executed under bash with a stubbed `curl`: tip == candidate ⇒ `fresh=true`; tip != candidate ⇒ `fresh=false` + "superseded — no-op"; curl failure ⇒ step exits nonzero | committed simulation |
-| m | a test/log contains the synthetic secret sentinel | `test/ci-failures.test.mjs` — real `check-sentinel.mjs` exits 1 naming file:line for `SYNTHETIC-SECRET-SENTINEL-9f3c1a` and a foreign `sk-or-v1-…`; `test/browser/leak.spec.mjs` is the sentinel's vehicle in the suite | committed |
+| m | a test/log contains the synthetic secret sentinel | `test/ci-failures.test.mjs` — real `check-sentinel.mjs` exits 1 naming file:line for the planted campaign sentinel and a foreign `sk-or-v1-…` key; `test/browser/leak.spec.mjs` is the sentinel's vehicle in the suite. The sentinel is assembled from fragments in every file that handles it, never written as a literal: a retained copy of the source (a trace, an injected review diff) must not itself trip the scan, and `test/ci-guards.test.mjs` enforces that | committed |
 | n | the Worker receives a forbidden paid request | `test/worker/chat.test.mjs` — `403 NOT_FREE` with `count=0` upstream calls, plus paid-fallback list and `route:` refusal; `forwardedBody` allowlist | committed |
 | o | a live probe exceeds its budget | `test/live-health-budget.test.mjs` (9 tests) — non-integer and above-ceiling values for all four `LIVE_HEALTH_MAX_*` variables are usage errors (exit 2, empty stdout) raised before any request; `live-health.yml` now maps the variables | committed |
 | p | the same incident repeats, then recovers | `test/worker/incident.test.mjs` — dedup on repeat failure, recovery closes the same incident, untrusted text neutralised, reporting gate | committed |
@@ -138,9 +138,12 @@ campaign publication is what satisfies the vendor/font/build-info contract.
 
 ## 5. Local verification
 
-- `npm run verify` (coordinator-run) — **PASS 11/11**, run twice; identical staged tree
-  `sha256:7a891fe70a91b20860ba5a1d0027a07d24b7ce69d8ba7de7b323ad13cdcc1d03`
-  (23 files, 537,841 bytes), i.e. deterministic build output.
+- `npm run verify` (coordinator-run) — **PASS 11/11**, run repeatedly; expected
+  count `expected 88, unexpected 0, flaky 0` in the Playwright report. The staged
+  tree digest is stable for a given commit (`sha256:7a891fe7…` for tip `9313d41`,
+  `sha256:e91832bd…` for `7841592`, 23 files, 537,841 bytes) — it tracks the commit
+  because `_site/build-info.json` records it, and everything else in the tree is
+  byte-identical across runs and platforms.
 - Class counts from the **final** gate run (after the three new §15 files landed):
   **offline 77** (17 entries), **worker 50**, **browser 88** (chromium),
   **scheduled-browser 160** (firefox 80 + webkit 80 — re-run green on this tree,
@@ -233,13 +236,17 @@ Residual risks:
 - Rows **g**, **h**, **i** are enforced inside the real build/verify path but have
   no committed planted-fault test; their negative proofs are the gitignored
   `.scratch/ci/evidence/` drills.
-- `check-sentinel.mjs` scans retained output: a *red* browser run retains traces
-  and `error-context.md` that contain the sentinel literal from
-  `test/browser/leak.spec.mjs`, so a failing browser class can also produce a
-  sentinel finding. Attribution is preserved (the summary is written first and
-  the run is already red), and a sentinel line labelled with a trace on an
-  otherwise green tree means that retained artifact belongs to an earlier failing
-  run; the script header documents both.
+- `check-sentinel.mjs` scans retained output. Two ways a green tree could still show
+  a finding, both now contained: (1) the sentinel must never be written as a literal
+  in the repository — the hosted runner proved why on 2026-09-15, when a third-party
+  review reporter embedded the PR's `git diff` in the retained Playwright JSON report
+  and a document quoting the value failed the scan on an otherwise green run; the
+  value is now assembled from fragments everywhere it is handled, and
+  `test/ci-guards.test.mjs` fails if any tracked file carries it. (2) A *failing*
+  `leak.spec.mjs` run renders the sentinel into the page by design, so its retained
+  error context can still quote it — that finding is real (the value really is in a
+  retained artifact), the class is already red, and the class summary is written
+  before the scan runs, so attribution is preserved.
 
 ## 7. Owner-only activation
 
