@@ -176,9 +176,9 @@ const cannedSearch = (q) => webSearch(q, { transport: corpusTransport });
 
 // ── engine ─────────────────────────────────────────────────────────────
 const bridge = await import(join(ROOT, 'js/bridge.js'));
-const { MAX_TOOL_ROUNDS } = bridge;
-const { PRESETS } = await import(join(ROOT, 'js/sessions.js'));
-const SYSTEM = PRESETS['BASIC AGENT'];
+const { MAX_RESEARCH_ROUNDS } = await import(join(ROOT, 'js/research.js'));
+const { DEFAULT_PERSONA } = await import(join(ROOT, 'js/persona.js'));
+const SYSTEM = DEFAULT_PERSONA;
 await bridge.initEngine();
 
 /** Run one (model, task, repeat). Never throws: a crash is a recorded result. */
@@ -186,11 +186,10 @@ async function runCase(model, task, rep) {
   CASE = { fixture: task.fixture, statuses: [], raws: [], round: 0 };
   const seen = { rounds: 0, queries: [], finals: [], errors: [], delta: '' };
   bridge.clearHistory();
-  bridge.appendHistory(0, SYSTEM);
   let crash = null;
   try {
     await bridge.runTurn(task.prompt, {
-      key: '', model, search: cannedSearch,
+      getKey: () => '', system: SYSTEM, model, search: cannedSearch,
       on(ev) {
         switch (ev.type) {
           case 'round-started': seen.rounds++; break;
@@ -277,11 +276,11 @@ function tierFor(results) {
   const L3 = (() => {
     const cands = t1.filter(calledTool);
     if (!cands.length) return na;
-    return cands.some((r) => r.toolCalls.length < MAX_TOOL_ROUNDS && quality(r).notFallback);
+    return cands.some((r) => r.toolCalls.length < MAX_RESEARCH_ROUNDS && quality(r).notFallback);
   })();
   // L4 — only observable when the Search Budget actually ran out.
   const L4 = (() => {
-    const spent = t4.filter((r) => r.toolCalls.length >= MAX_TOOL_ROUNDS);
+    const spent = t4.filter((r) => r.toolCalls.length >= MAX_RESEARCH_ROUNDS);
     if (!spent.length) return na;
     return spent.some((r) => quality(r).notFallback);
   })();
@@ -356,7 +355,7 @@ const q = (rs) => {
 };
 
 let md = `# Free Model Capability Sweep — ${STAMP}\n\n`;
-md += `Run: \`${RUN.replace(ROOT, '')}\` · Search Budget: ${MAX_TOOL_ROUNDS} · Preset: \`BASIC AGENT\` · path: Proxy on the Operator Key\n\n`;
+md += `Run: \`${RUN.replace(ROOT, '')}\` · Research Budget: ${MAX_RESEARCH_ROUNDS} · Assistant: \`ASM::AGENT\` · path: Proxy on the Operator Key\n\n`;
 md += `Canned search results, so the model is the only variable. A 429 marks a case **not tested**, never failed.\n\n`;
 md += `| Free Model | declares tools | Tier | L0 | L1 | L2 | L3 | L4 | T1 | T2 no-search | non-empty | not fallback | cites result | no loop | worst HTTP | not tested |\n`;
 md += `|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n`;

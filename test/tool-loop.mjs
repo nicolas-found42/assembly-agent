@@ -3,12 +3,14 @@
 // fetch is stubbed with canned SSE streams, because driving real Scanner bytes
 // is deliberate (ADR-0002). Search enters through runTurn()'s opts.search seam
 // as canned result records (ADR-0002 amendment) — no fetch interception below
-// the Fan-out. Guards the bug where a turn that spent all MAX_TOOL_ROUNDS on
-// searches ended with no final answer.
+// the Fan-out. Every turn now opens with the mandatory initial research
+// through that seam, so the seam sees one query before the first chat POST.
+// Guards the bug where a turn that spent all its search rounds ended with no
+// final answer.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-// ── browser shims (bridge -> search.js/sessions.js touch window+localStorage) ──
+// ── browser shims (bridge -> search.js touches window+localStorage) ──
 globalThis.window = globalThis;
 globalThis.location = { origin: 'http://localhost:8000' };
 globalThis.document = { createElement: () => ({}), querySelector: () => null, body: { appendChild: () => {} } };
@@ -42,9 +44,9 @@ const textSSE = (text) => sse([
 ]);
 
 // ── the search seam: adapters handed to runTurn() instead of fetch fakes ──
-// Contract (js/bridge.js opts.search): async search(query) returns the SAME
-// record the Fan-out builds — { markdown, sources, failures, perSource }.
-// Adapters never reject; failures ride the failures field.
+// Contract (js/bridge.js opts.search): async search(query, { fresh }) returns
+// the SAME record the Fan-out builds — { markdown, sources, failures, perSource }.
+// The initial lookup carries { fresh: true }; failures ride the failures field.
 const STUB_MD = '### [STUB] Seam fixture\nhttps://stub.example/seam\ninjected record body\n';
 const record = (failures = []) => ({
   markdown: failures.length ? '' : STUB_MD,
@@ -52,10 +54,11 @@ const record = (failures = []) => ({
   failures,
   perSource: failures.length ? [] : [{ tag: 'STUB', hits: 1, ms: 0 }],
 });
-/** search(query) -> record, remembering every query it served. */
+/** search(query, opts) -> record, remembering every call and how many chat
+ *  POSTs had already happened when it arrived (research must come first). */
 function stubSearch(rec = record()) {
   const seen = [];
-  const search = async (query) => { seen.push(query); return rec; };
+  const search = async (query, opts) => { seen.push({ query, opts, chatCalls: calls.length }); return rec; };
   search.seen = seen;
   return search;
 }
@@ -72,15 +75,27 @@ globalThis.fetch = async (url, opts) => {
 };
 
 const bridge = await import('../js/bridge.js');
-const { MAX_TOOL_ROUNDS, BUDGET_NUDGE } = bridge;
+const { MAX_RESEARCH_ROUNDS } = await import('../js/research.js');
+const { BUDGET_NUDGE } = bridge;
 await bridge.initEngine();
 
-/** Drive one runTurn() with a canned script; returns the aggregated seen-view,
- *  the raw event log, the persist call log, the TurnSummary, and the search
- *  adapter the turn used. Default persist records P1/P2/P3-style entries. */
-async function drive(text, responses, model = 'x/y:free', search = stubSearch(), persist = null) {
+const SYSTEM = 'system prompt';
+const SEARCHES = MAX_RESEARCH_ROUNDS - 1; // the initial lookup spends the first round
+
+/**
+ * Drive one runTurn() with a canned script; returns the aggregated seen-view,
+ * the raw event log, the persist call log, the TurnSummary, the recorded chat
+ * payloads, and the search adapter the turn used. Persists are labelled by
+ * SITE from the last request body: P1 the user message, P2 a settled answer,
+ * P3 the nudged (budget-exhausted) answer.
+ */
+async function drive(text, responses, opts = {}) {
+  const {
+    model = 'x/y:free', key = '', search = stubSearch(), persist = null,
+    tools, retry, correct, seed = [],
+  } = opts;
   bridge.clearHistory();
-  bridge.appendHistory(0, 'system prompt');
+  for (const [role, content] of seed) bridge.appendHistory(role, content);
   script = responses.slice();
   calls = [];
   const seen = { rounds: 0, tools: [], results: [], finals: [], errors: [], done: 0, delta: '' };
@@ -99,29 +114,38 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
       default: break;
     }
   };
-  const recordPersist = () => { persists.push(persists.length); };
+  const recordPersist = () => {
+    const last = calls.at(-1);
+    const nudged = !!last && last.messages.some((m) => m.content === BUDGET_NUDGE);
+    persists.push(calls.length === 0 ? 'P1' : nudged ? 'P3' : 'P2');
+  };
   const summary = await bridge.runTurn(text, {
-    key: '', model, on,
+    system: SYSTEM, getKey: () => key, model, on,
     persist: persist || recordPersist,
-    search,
+    search, tools, retry, correct,
   });
-  // Label persist calls by SITE, not arrival order: P1 pre-gate, P2 after a
-  // natural round-final, P3 after the nudged pass — whose round-started
-  // carries round === MAX_TOOL_ROUNDS.
-  const nudged = events.some((ev) => ev.type === 'round-started' && ev.round === MAX_TOOL_ROUNDS);
-  const labeled = persists.map((_, i) => (i === 0 ? 'P1' : nudged ? 'P3' : 'P2'));
-  return { seen, search, events, persists: labeled, summary };
+  return { seen, search, events, persists, summary, calls: calls.slice() };
 }
 
-// ── 1. plain finish: one round, one final, no extra call ────────────────
+// ── 1. plain finish: research first, one round, one final ───────────────
 {
-  const { seen } = await drive('hi', [() => textSSE('hello there')]);
-  assert.equal(seen.rounds, 1, 'plain finish: 1 round');
+  const out = await drive('explain wasm', [() => textSSE('hello there')]);
+  const { seen, search } = out;
+  assert.equal(seen.rounds, 1, 'plain finish: 1 model round');
   assert.deepEqual(seen.finals, ['hello there'], 'plain finish: final text');
   assert.equal(seen.tools.length, 0, 'plain finish: no tool call');
   assert.equal(calls.length, 1, 'plain finish: 1 chat call');
   assert.equal(seen.done, 1, 'plain finish: done once');
-  console.log('ok  : plain finish -> single round, single final');
+  assert.deepEqual(search.seen.map((s) => s.query), ['explain wasm'], 'plain finish: initial research query');
+  assert.deepEqual(search.seen[0].opts, { fresh: true }, 'plain finish: initial lookup asks for fresh results');
+  assert.equal(search.seen[0].chatCalls, 0, 'plain finish: research precedes every chat POST');
+  const msgs = calls[0].messages;
+  assert.equal(msgs[0].role, 'system', 'plain finish: system prompt rides opts, not history');
+  assert.equal(msgs[0].content, SYSTEM, 'plain finish: system prompt is the caller string');
+  assert.ok(msgs.some((m) => m.role === 'user' && m.content === `Web search results for "explain wasm":\n\n${STUB_MD.trim()}`),
+    'plain finish: research results ride a plain user message');
+  assert.equal(msgs.filter((m) => m.role === 'user').length, 2, 'plain finish: question + research results');
+  console.log('ok  : plain finish -> research before the first POST, single round, single final');
 }
 
 // ── 2. one tool round then an answer ────────────────────────────────────
@@ -131,10 +155,12 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
     () => textSSE('the answer'),
   ]);
   assert.equal(seen.rounds, 2, 'tool+answer: 2 rounds');
-  assert.deepEqual(search.seen, ['wasm'], 'tool+answer: query forwarded to the injected search');
+  assert.deepEqual(search.seen.map((s) => s.query), ['q', 'wasm'], 'tool+answer: initial research then the tool query');
+  assert.equal(search.seen[1].chatCalls, 1, 'tool+answer: model search arrives after the first POST');
   assert.deepEqual(seen.results, [record()], 'tool+answer: whole record forwarded to tool-finished');
   assert.deepEqual(seen.tools, ['wasm'], 'tool+answer: query forwarded');
   assert.deepEqual(seen.finals, ['the answer'], 'tool+answer: final text');
+  assert.ok(calls[0].tools, 'tool+answer: 1st call offers tools');
   assert.ok(calls[1].tools, 'tool+answer: 2nd call still offers tools');
   const toolMsg = calls[1].messages.find((m) => m.role === 'tool');
   assert.equal(toolMsg?.content, STUB_MD, 'tool+answer: injected markdown fed back');
@@ -144,26 +170,30 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
 // ── 3. budget exhausted -> nudged final pass (the regression) ───────────
 {
   const responses = [];
-  for (let i = 0; i < MAX_TOOL_ROUNDS; i++) responses.push(() => toolCallSSE(`call_${i}`, `q${i}`));
+  for (let i = 0; i < SEARCHES; i++) responses.push(() => toolCallSSE(`call_${i}`, `q${i}`));
   responses.push(() => textSSE('forced final answer'));
-  const { seen } = await drive('hard question', responses);
+  const out = await drive('hard question', responses);
+  const { seen } = out;
 
-  assert.equal(seen.tools.length, MAX_TOOL_ROUNDS, `exhausted: ${MAX_TOOL_ROUNDS} tool calls`);
-  assert.equal(calls.length, MAX_TOOL_ROUNDS + 1, 'exhausted: one extra final call');
-  assert.equal(seen.rounds, MAX_TOOL_ROUNDS + 1, 'exhausted: final pass gets its own round');
+  assert.equal(seen.tools.length, SEARCHES, `exhausted: ${SEARCHES} model searches after the initial one`);
+  assert.equal(out.search.seen.length, MAX_RESEARCH_ROUNDS, 'exhausted: initial + model searches spend the whole budget');
+  assert.equal(calls.length, MAX_RESEARCH_ROUNDS, 'exhausted: one extra final call');
+  assert.equal(seen.rounds, MAX_RESEARCH_ROUNDS, 'exhausted: final pass gets its own round');
   assert.deepEqual(seen.finals, ['forced final answer'], 'exhausted: user gets a final answer');
   assert.equal(seen.errors.length, 0, 'exhausted: no error surfaced');
 
-  const last = calls[MAX_TOOL_ROUNDS];
+  const last = calls.at(-1);
   assert.equal(last.tools, undefined, 'exhausted: final pass sends no tools');
   const nudgeIdx = last.messages.findLastIndex((m) => m.content === BUDGET_NUDGE);
   assert.equal(nudgeIdx, last.messages.length - 1, 'exhausted: nudge is the single appended message, dead last');
-  assert.equal(last.messages.filter((m) => m.role === 'user').length, 2,
-    'exhausted: only the question and the nudge speak as user');
+  assert.equal(last.messages.filter((m) => m.role === 'user').length, 3,
+    'exhausted: only the question, the research results and the nudge speak as user');
 
   // the nudge is scaffolding — it must not survive into history / saved sessions
   const hist = bridge.historyMessages();
   assert.ok(!hist.some((m) => m.content === BUDGET_NUDGE), 'exhausted: nudge absent from history');
+  assert.ok(hist.some((m) => m.role === 1 && m.content.startsWith('Web search results for "hard question":')),
+    'exhausted: research results stay in history');
   assert.equal(hist.at(-1).content, 'forced final answer', 'exhausted: answer stored');
   assert.equal(hist.at(-1).role, 2, 'exhausted: answer stored as assistant');
   assert.equal(hist.at(-1).tool_call_id, '', 'exhausted: answer carries no tool meta');
@@ -173,25 +203,27 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
 // ── 4. final pass yields nothing -> explicit notice, never a silent empty ──
 {
   const responses = [];
-  for (let i = 0; i < MAX_TOOL_ROUNDS; i++) responses.push(() => toolCallSSE(`c${i}`, `q${i}`));
+  for (let i = 0; i < SEARCHES; i++) responses.push(() => toolCallSSE(`c${i}`, `q${i}`));
   responses.push(() => textSSE('   '));
   const { seen } = await drive('hard question', responses);
   assert.equal(seen.finals.length, 1, 'empty final: still exactly one final');
   assert.match(seen.finals[0], /Search budget/, 'empty final: explains the budget');
+  assert.equal(seen.errors.length, 0, 'empty final: no error surfaced');
   console.log('ok  : empty final pass -> explanatory notice');
 }
 
 // ── 5. paid model with no key never reaches the network ────────────────
 {
-  const { seen, search, persists, summary } = await drive('hi', [], 'openai/gpt-4o');
+  const { seen, search, persists, summary } = await drive('hi', [], { model: 'openai/gpt-4o' });
   assert.equal(calls.length, 0, 'paid+anon: no chat call');
   assert.equal(search.seen.length, 0, 'paid+anon: no search either');
   assert.equal(seen.errors.length, 1, 'paid+anon: one error');
-  assert.match(seen.errors[0], /needs your own key/, 'paid+anon: actionable message');
+  assert.match(seen.errors[0], /needs your API key/, 'paid+anon: actionable message');
   assert.equal(seen.done, 1, 'paid+anon: done once');
   // gate sits AFTER the first save point: the user message persisted, nothing else did
   assert.deepEqual(persists, ['P1'], 'paid+anon: exactly P1 fired before the gate');
   assert.equal(summary.ok, false, 'paid+anon: TurnSummary reports failure');
+  assert.deepEqual(summary.research, { query: '', sources: 0, failures: [] }, 'paid+anon: no research ran');
   console.log('ok  : paid model without key blocked before network');
 }
 
@@ -207,6 +239,7 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   assert.deepEqual(persists, ['P1'], 'http error: past P1, no further persists');
   assert.equal(summary.ok, false, 'http error: TurnSummary reports failure');
   assert.ok(summary.error, 'http error: TurnSummary carries the error');
+  assert.equal(summary.research.query, 'q', 'http error: the research that ran is reported');
   console.log('ok  : mid-loop HTTP error surfaces and stops');
 }
 
@@ -218,7 +251,7 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   ]);
   assert.equal(seen.rounds, 2, 'parallel: 2 rounds');
   assert.deepEqual(seen.tools, ['zig', 'rust'], 'parallel: tool-started fires once per call, in call order');
-  assert.deepEqual(search.seen, ['zig', 'rust'], 'parallel: one search per call id, in call order');
+  assert.deepEqual(search.seen.map((s) => s.query), ['two things', 'zig', 'rust'], 'parallel: one search per call id, in call order');
   const tools = calls[1].messages.filter((m) => m.role === 'tool');
   assert.deepEqual(tools.map((t) => t.tool_call_id), ['call_a', 'call_b'], 'parallel: one role-tool message per call id');
   assert.ok(tools.every((t) => t.content === STUB_MD), 'parallel: each call carries the record markdown');
@@ -232,8 +265,8 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   const { seen, search } = await drive('q', [
     () => toolCallSSE('call_1', 'wasm'),
     () => textSSE('answered from context'),
-  ], 'x/y:free', stubSearch(record(['wikipedia'])));
-  assert.deepEqual(search.seen, ['wasm'], 'failure: query still reaches the adapter');
+  ], { search: stubSearch(record(['wikipedia'])) });
+  assert.deepEqual(search.seen.map((s) => s.query), ['q', 'wasm'], 'failure: both queries still reach the adapter');
   assert.deepEqual(seen.errors, [], 'failure: adapter rejection would surface here — none did');
   assert.deepEqual(seen.results, [record(['wikipedia'])], 'failure: record with failures forwarded untouched');
   assert.deepEqual(seen.finals, ['answered from context'], 'failure: turn completes');
@@ -250,9 +283,9 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   assert.deepEqual(out.persists, ['P1', 'P2'],
     'persist timing: happy path saves at P1 and P2, never P3');
 
-  // budget exhausted: all MAX_TOOL_ROUNDS rounds spend tools + forced final -> P3, not P2
+  // budget exhausted: SEARCHES tool rounds + forced final -> P3, not P2
   const responses = [];
-  for (let i = 0; i < MAX_TOOL_ROUNDS; i++) responses.push(() => toolCallSSE(`call_${i}`, `q${i}`));
+  for (let i = 0; i < SEARCHES; i++) responses.push(() => toolCallSSE(`call_${i}`, `q${i}`));
   responses.push(() => textSSE('forced final answer'));
   out = await drive('hard question', responses);
   assert.deepEqual(out.persists, ['P1', 'P3'],
@@ -262,7 +295,7 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
 
 // ── 10. checkAccess: free models open to everyone, keyed models need a key ──
 {
-  const BLOCKED_REASON = 'This model needs your own key — open SET and add sk-or-… Anonymous users can use any :free model.';
+  const BLOCKED_REASON = 'This model needs your API key — add one in Settings, or choose a free model.';
   assert.deepEqual(bridge.checkAccess('x/y:free', ''), { ok: true }, 'checkAccess: free model, no key -> ok');
   assert.deepEqual(bridge.checkAccess('openai/gpt-4o', ''), { ok: false, reason: BLOCKED_REASON },
     'checkAccess: paid model, no key -> blocked with the exact reason string');
@@ -284,14 +317,23 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   assert.equal(fin.name, 'web_search', 'tool-finished: name identifies the tool');
   assert.equal(fin.query, 'wasm', 'tool-finished: carries the query');
   assert.deepEqual(fin.result, record(), 'tool-finished: result is the whole webSearch record');
+  const started = out.events.find((ev) => ev.type === 'research-started');
+  const finished = out.events.find((ev) => ev.type === 'research-finished');
+  assert.deepEqual(started, { type: 'research-started', query: 'q' }, 'research-started: query only');
+  assert.equal(finished.query, 'q', 'research-finished: carries the query');
+  assert.equal(finished.markdown, STUB_MD, 'research-finished: carries the markdown');
+  assert.equal(finished.sources, 1, 'research-finished: carries the source count');
+  assert.deepEqual(finished.failures, [], 'research-finished: carries the failure list');
+  assert.equal(finished.hits, 1, 'research-finished: carries the hit count');
   assert.deepEqual(
     out.events.map((ev) => ev.type),
-    ['round-started', 'tool-started', 'tool-finished', 'round-started', 'delta', 'round-final', 'done'],
+    ['research-started', 'research-finished', 'round-started', 'tool-started', 'tool-finished',
+      'round-started', 'delta', 'round-final', 'done'],
     'events: exact sequence for one tool round then an answer (the streamed answer is a delta)',
   );
   const starts = out.events.filter((ev) => ev.type === 'round-started');
   assert.deepEqual(starts.map((ev) => ev.round), [0, 1], 'events: round-started carries round index 0 then 1');
-  console.log('ok  : tool-finished shape + event sequence');
+  console.log('ok  : tool-finished + research event shapes, exact event sequence');
 }
 
 // ── 12. TurnSummary: plain finish and error turns ───────────────────────
@@ -300,6 +342,8 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   assert.equal(good.summary.ok, true, 'summary: plain finish ok');
   assert.equal(good.summary.rounds, 1, 'summary: plain finish rounds');
   assert.equal(good.summary.text, 'hello there', 'summary: plain finish text');
+  assert.deepEqual(good.summary.research, { query: 'assistant greeting etiquette', sources: 1, failures: [] },
+    'summary: greeting turn researches etiquette, not user words');
 
   const bad = await drive('q', [
     () => toolCallSSE('call_1', 'wasm'),
@@ -325,7 +369,25 @@ async function drive(text, responses, model = 'x/y:free', search = stubSearch(),
   assert.deepEqual(out.persists, ['P1'], 'abort: past P1, no further persists');
   assert.equal(out.summary.ok, false, 'abort: summary not ok');
   assert.equal(out.summary.aborted, true, 'abort: summary carries the aborted flag');
+  assert.equal(out.summary.research.query, 'q', 'abort: the research that ran is reported');
   console.log('ok  : abort mid-stream -> aborted event, P1-only persists');
+}
+
+// ── 14. retry: no user append, no P1, but research runs fresh again ────
+{
+  const out = await drive('retried question', [() => textSSE('second try')], {
+    retry: true,
+    seed: [[1, 'retried question'], [2, '']],
+  });
+  assert.deepEqual(out.persists, ['P2'], 'retry: no user persist point');
+  assert.deepEqual(out.search.seen.map((s) => s.query), ['retried question'], 'retry: research runs again');
+  assert.deepEqual(out.search.seen[0].opts, { fresh: true }, 'retry: research is fresh, not cached');
+  assert.deepEqual(out.seen.finals, ['second try'], 'retry: answer settles');
+  const users = bridge.historyMessages().filter((m) => m.role === 1).map((m) => m.content);
+  assert.equal(users.length, 2, 'retry: the question is not stored twice');
+  assert.equal(users[0], 'retried question', 'retry: the original question stays first');
+  assert.ok(users[1].startsWith('Web search results for "retried question":'), 'retry: fresh results follow');
+  console.log('ok  : retry -> fresh research, no duplicate user message');
 }
 
 console.log('ALL TOOL-LOOP PASS');

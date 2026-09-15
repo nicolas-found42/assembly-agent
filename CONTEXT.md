@@ -1,12 +1,16 @@
 # ASM Agent
 
-Static amber CRT chat that talks to OpenRouter through a WAT engine. The context covers chat, model catalog, and free-tier access.
+Static amber CRT chat that talks to OpenRouter through a WAT engine. The context covers chats, the assistant library, web research, the wording check, the model catalog, storage v2, and free-tier access.
 
 ## Language
 
 **Free Model**:
 A model whose OpenRouter id ends with `:free` and is available at zero cost on the free tier.
 _Avoid_: free-tier model, zero-cost model
+
+**Newest-Free**:
+The automatic model mode: a new chat resolves `newestFreeModelId()` once and pins the result. Candidates must be free, priced `:free`, and produce text; the newest `created` wins, and ties break on the greater id. The catalog never selects a paid model when the free pool is empty. Catalog refreshes never change an existing chat, and there is no automatic fallback on error.
+_Avoid_: auto model, default model
 
 **Operator Key**:
 The single `sk-or-...` key owned by the operator and held only on the server to authorize free-model requests.
@@ -17,8 +21,12 @@ A visitor who uses the agent without supplying an API key.
 _Avoid_: guest, unauthenticated user
 
 **BYO User**:
-A visitor who supplies their own OpenRouter key via SET.
+A visitor who supplies their own OpenRouter key in Settings.
 _Avoid_: logged-in user, paid user
+
+**Session Key**:
+The OpenRouter key kept in `sessionStorage` (`asm.openrouter.key`) for the current browser session. It is the default for a new key. "Remember on this device" optionally persists a key to settings (`asm.settings.key`); removing the key clears both copies. The Bridge reads the key before every request round, and a key that is changed or removed stops a paid turn.
+_Avoid_: temporary key, transient key
 
 **Proxy**:
 The server edge that receives `POST /api/chat` (and optionally `GET /api/search?url=` / `/api/arxiv?q=` for a CORS-blocked free Source) from the browser and forwards it — chat to OpenRouter with the Operator Key, search to the upstream open API with `access-control-allow-origin: *`.
@@ -28,25 +36,45 @@ _Avoid_: backend, gateway, middleware
 The per-IP quota the Proxy can enforce on Anonymous Users to protect the Operator Key. Currently not enforced — Anonymous Users rely on the Operator Key's OpenRouter limit (429); enforcement is deferred until abuse is observed.
 _Avoid_: throttling, quota
 
-**Preset**:
-A named system prompt the `:preset` dialog offers. `BASIC AGENT` is the default; `RESEARCH ANALYST`, `ASSEMBLY GURU` and `TERSE CODER` remain available.
-_Avoid_: template, persona, profile
+**Assistant**:
+A named set of instructions in the assistant library. The built-in `ASM::AGENT` is always present and protected from edit and delete. Custom assistants can be created, edited, duplicated, deleted, imported, and exported. Custom instructions cannot disable the mandatory web research.
+_Avoid_: preset, persona, profile, template
+
+**Assistant Snapshot**:
+The `{assistantId, assistantRev, assistantName, instructions}` copy baked into a chat when it starts. Editing an assistant affects only future chats. An older chat can run "Update instructions" to take a newer rev of the same assistant; it never switches to another assistant. A deleted assistant leaves its chats usable on their snapshots.
+_Avoid_: reference, pointer, link
+
+**Chat**:
+One conversation record in the v2 store: title, timestamps, assistant snapshot, one model choice, and messages. A new chat always starts with the built-in assistant; choosing a different assistant starts a new chat.
+_Avoid_: session, thread, conversation
+
+**Migration**:
+The one-time v1 to v2 conversion in `js/store.js` (`migrateIfNeeded`). It stages the plan in memory, writes the backup (`asm.legacy.backup.v1`, with the settings key stripped) first, writes the assistants, chats, and settings next, and writes the marker (`asm.migration.v2`) last. A failed write leaves the legacy keys untouched and no marker behind, so a later run retries safely. Legacy keys are not deleted.
+_Avoid_: upgrade, data import
 
 **Tool Call**:
 The structured request a model streams back to run `web_search`, carrying a name and a JSON `arguments` string.
 _Avoid_: function call, tool invocation
 
-**Tool Round**:
-One request to the model plus one `web_search` run whose result is fed back as a `role:"tool"` message.
-_Avoid_: iteration, hop, turn (ambiguous — a Turn spans N Tool Rounds)
+**Research Round**:
+One `web_search` run for a Turn. The first round is mandatory and fresh: it runs before the first model call with `fresh: true`, so the `sessionStorage` caches do not apply to it. Later rounds come from Tool Calls in Model Rounds. `MAX_RESEARCH_ROUNDS` counts the initial lookup inside the same cap.
+_Avoid_: tool round, search hop
+
+**Model Round**:
+One request to the model in a Turn. The first model round starts after the mandatory initial Research Round, grounded on the results already in context; a later round can spend one Research Round through a Tool Call whose result is fed back as a `role:"tool"` message. Bounded by the Search Budget, then closed by the `BUDGET_NUDGE` pass.
+_Avoid_: tool round, iteration, hop
 
 **Search Budget**:
-The largest number of Tool Rounds one Turn may spend (`MAX_TOOL_ROUNDS`, currently 5). The only guaranteed stop in the tool loop: when it runs out, a final tools-removed pass nudged by `BUDGET_NUDGE` forces an answer.
+The largest number of Research Rounds one Turn may spend (`MAX_RESEARCH_ROUNDS`, currently 5, including the initial lookup). The only guaranteed stop in the research loop: when it runs out, a final tools-disabled pass nudged by `BUDGET_NUDGE` forces an answer from the results already in the conversation.
 _Avoid_: tool limit, max rounds, retry limit
 
 **Turn**:
-One user message processed to a final answer: N Tool Rounds bounded by the Search Budget, optionally closed by the `BUDGET_NUDGE` pass. The Turn loop lives in the Bridge; a saved session stores Turns as history entries.
+One user message processed to a final answer: one mandatory fresh Research Round, then Model Rounds bounded by the Search Budget, optionally closed by the `BUDGET_NUDGE` pass. A built-in answer may take one Wording Check rewrite before it settles. The Turn loop lives in the Bridge; a Chat stores Turns as messages.
 _Avoid_: request cycle, completion, exchange
+
+**Wording Check**:
+The mechanical ASD-STE100-style pass on an answer from the built-in assistant. `js/ste.js` `checkProse` reports rule-linked violations after the answer settles; a violation can trigger at most one tools-disabled corrective rewrite, which `integrityPreserved` must accept (links, code blocks, numbers, and quoted spans survive). A failed or rejected rewrite keeps the original answer, and a superseded draft never enters the model context. Custom assistants are exempt; interface copy is checked in development and tests, not at runtime. Implemented checks: sentence length over 20 words (rule 5.1), a paragraph over six sentences (rule 6.6), a passive-voice heuristic (rule 3.6), a progressive `-ing` heuristic (rules 3.5 and 3.2), a double negative (no Issue 9 rule number; mapped from Global English rule 3.12 by TechScribe), and more than one command per sentence (rule 5.2).
+_Avoid_: STE pass, style pass, rewrite pass
 
 **Scanner**:
 The WAT code that reads the SSE stream and stages every Tool Call of the turn in the Tool Call Table. Walks each `tool_calls` line left to right: `"id":"` opens the next slot, `"name":"` and `"arguments":"` land on the slot open at that point.
@@ -61,7 +89,7 @@ One run of `scripts/sweep-free-models.mjs`: the same task battery sent to every 
 _Avoid_: benchmark, eval, test matrix
 
 **Capability Tier**:
-How far one Free Model gets through a Tool Round, L0 to L4. L0 accepts tools; L1 emits a Tool Call the Scanner reads; L2 the query fits the question; L3 it stops searching and answers by itself; L4 it obeys `BUDGET_NUDGE` when the Search Budget is spent. L3 and L4 are two exits, not two steps.
+How far one Free Model gets through a Model Round, L0 to L4. L0 accepts tools; L1 emits a Tool Call the Scanner reads; L2 the query fits the question; L3 it stops searching and answers by itself; L4 it obeys `BUDGET_NUDGE` when the Search Budget is spent. L3 and L4 are two exits, not two steps.
 _Avoid_: score, grade, rating, level
 
 **Source**:
@@ -163,12 +191,12 @@ _Avoid_: hedge retry, denial fix, second pass
 Optional Worker route `GET /api/search?url=` (and `/api/arxiv?q=`) that forwards a CORS-blocked open source (e.g., arXiv Atom) through the same Worker that holds the Operator Key, adds `access-control-allow-origin: *`, and translates to JSON. Free, no key, only for sources that already pass the rest of the Inclusion Checklist.
 _Avoid_: cors proxy, gateway
 
-**Tool Card**:
-The collapsible per-Tool-Call panel that shows one `web_search` run's grouped Source blocks and its completion status (`8 SOURCES · MISSED: …` or `FAILED: …`). One Tool Round with parallel calls shows N Tool Cards stacked in round order; older rounds auto-collapse.
-_Avoid_: tool bubble, search card
+**Sources Panel**:
+The `Sources (N)` disclosure under a finished answer that lists the links the answer used (`title`, `url`, `snippet`). The answer footer also shows the model used, the wording state ("checked wording"), and honest notes such as "Some sources were unreachable." or "Web search was not available for this answer."
+_Avoid_: tool card, source list, citations
 
 **Touch Target**:
-The interactive hit area of a status, dock, or dialog control at 360–375px. Must be ≥24×24px (WCAG 2.2 2.5.8) and ideally 44×44pt (Apple HIG) with 8px spacing; in ASM Agent this covers `.b-seg`, `.b-send`, `.b-sug-b`, and dialog buttons.
+The interactive hit area of a header, dock, or dialog control at 360–375px. Must be ≥24×24px (WCAG 2.2 2.5.8) and ideally 44×44pt (Apple HIG) with 8px spacing; in ASM Agent this covers the header actions (`.b-act`), the send button (`.b-send`), and the dialog controls (`.b-btn`, `.b-x`, `.b-chip`).
 _Avoid_: hitbox, tap area
 
 **Focus Visible**:
@@ -176,7 +204,7 @@ The keyboard-only focus indicator drawn via `:focus-visible` (not `:hover` or `o
 _Avoid_: focus ring, focus outline
 
 **Reduced Motion**:
-The `prefers-reduced-motion: reduce` degradation that disables ASM Agent's decorative motion — `flickerAnim` (4s), `spinframes` (0.8s), cursor blink, and CRT scan/sweep effects — replacing them with static glyphs or instant cuts.
+The `prefers-reduced-motion: reduce` degradation that disables ASM Agent's decorative motion — the CRT flicker (4.2s), the scan sweep (9s), the progress marker and streaming cursor blink (1.06s), and smooth scrolling.
 _Avoid_: reduced animation, motion safe
 
 **Live Region**:

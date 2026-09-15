@@ -105,17 +105,17 @@ function cacheSet(key, v) {
     store.setItem(key, JSON.stringify({ t: Date.now(), v }));
   } catch {}
 }
-async function cachedJson(url, sig, transport) {
+async function cachedJson(url, sig, transport, fresh) {
   const k = 'asm:' + hashUrl(url);
-  const hit = cacheGet(k);
+  const hit = fresh ? null : cacheGet(k); // fresh: a real network call each time
   if (hit !== null) return hit;
   const j = await jfetch(url, { signal: sig }, transport);
   cacheSet(k, j);
   return j;
 }
-async function cachedText(url, sig, transport) {
+async function cachedText(url, sig, transport, fresh) {
   const k = 'asm:' + hashUrl(url);
-  const hit = cacheGet(k);
+  const hit = fresh ? null : cacheGet(k);
   if (hit !== null) return hit;
   const t = await jfetchText(url, { signal: sig }, transport);
   cacheSet(k, t);
@@ -450,10 +450,10 @@ async function endoflifeSource(q, sig, transport) {
   }).join('');
 }
 
-async function cepSource(q, sig, transport) {
+async function cepSource(q, sig, transport, fresh) {
   if (!/(news|current events|headlines|breaking)/i.test(q)) return '';
   const u = `https://en.wikipedia.org/w/api.php?action=parse&page=Portal:Current_events&format=json&origin=*`;
-  const j = await cachedJson(u, sig, transport);
+  const j = await cachedJson(u, sig, transport, fresh);
   const html = j?.parse?.text?.['*'] || j?.parse?.text || '';
   const raw = String(html);
   const items = [...raw.matchAll(/<li>(.*?)<\/li>/gs)].map((m)=> stripTags(m[1]).slice(0,200).trim()).filter(Boolean).slice(0,3);
@@ -504,13 +504,13 @@ function wdqsLookup(q) {
   if (office==='pope') return { qid, prop:'wdt:P39' };
   return { qid, prop };
 }
-async function wdqsSource(q, sig, transport) {
+async function wdqsSource(q, sig, transport, fresh) {
   if (!/^who (is|leads)|current (president|prime minister|ceo|pope|king|monarch)/i.test(q)) return '';
   const hit = wdqsLookup(q);
   if (!hit) return '';
   const sparql = `SELECT ?person ?personLabel WHERE { wd:${hit.qid} ${hit.prop} ?person . SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } LIMIT 3`;
   const u = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
-  const j = await cachedJson(u, sig, transport);
+  const j = await cachedJson(u, sig, transport, fresh);
   const bindings = j?.results?.bindings || [];
   if (!bindings.length) return fmt('WIKIDATA SPARQL', `office ${hit.qid}`, `https://query.wikidata.org/#${encodeURIComponent(sparql)}`, 'no results');
   return bindings.slice(0,3).map((b)=>{
@@ -543,29 +543,29 @@ export function createLimiter(perMinute) {
 export const jinaLimiter = createLimiter(20);
 // Anon limiter for OPENVERSE (15/min) — per research sketch only openverse uses it; ddgia/wiki/mwmbl use cachedJson alone
 export const anonLimiter = createLimiter(15);
-async function jinaHelper(q, tag, target, sig, transport, limiter) {
+async function jinaHelper(q, tag, target, sig, transport, limiter, fresh) {
   const url = `https://r.jina.ai/${target}`;
   const k = 'asm:' + hashUrl(url);
   let text;
-  const hit = cacheGet(k);
+  const hit = fresh ? null : cacheGet(k);
   if (hit !== null) {
     text = hit;
   } else {
     if (limiter) await limiter.take();
-    text = await cachedText(url, sig, transport);
+    text = await cachedText(url, sig, transport, fresh);
   }
   const snippet = String(text).slice(0, 800);
   const title = tag === 'JINA NEWS' ? `news for ${q.slice(0,60)}` : `web results for ${q.slice(0,60)}`;
   return fmt(tag, title, target, snippet + '\n— via Jina Reader');
 }
-async function jinawebSource(q, sig, transport, limiter) {
+async function jinawebSource(q, sig, transport, limiter, fresh) {
   const target = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}`;
-  return jinaHelper(q, 'JINA WEB', target, sig, transport, limiter ?? jinaLimiter);
+  return jinaHelper(q, 'JINA WEB', target, sig, transport, limiter ?? jinaLimiter, fresh);
 }
-async function jinanewsSource(q, sig, transport, limiter) {
+async function jinanewsSource(q, sig, transport, limiter, fresh) {
   if (!/\b(news|headlines|right now|today|this week)\b/i.test(q)) return '';
   const target = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-  return jinaHelper(q, 'JINA NEWS', target, sig, transport, limiter ?? jinaLimiter);
+  return jinaHelper(q, 'JINA NEWS', target, sig, transport, limiter ?? jinaLimiter, fresh);
 }
 
 async function dictionarySource(q, sig, transport) {
@@ -595,10 +595,10 @@ async function tvmazeSource(q, sig, transport) {
   }).join('');
 }
 
-async function ddgiaSource(q, sig, transport) {
+async function ddgiaSource(q, sig, transport, fresh) {
   if (!q || q.trim().length < 3 || q.trim().length > 200) return '';
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&pretty=0&no_html=1&skip_disambig=1`;
-  const j = await cachedJson(url, sig, transport);
+  const j = await cachedJson(url, sig, transport, fresh);
   const absText = String(j?.AbstractText || '').trim();
   const answer = String(j?.Answer || '').trim();
   const heading = String(j?.Heading || q).trim();
@@ -618,35 +618,35 @@ async function ddgiaSource(q, sig, transport) {
     out += fmt('DDG IA', title, tUrl, `${snip} — via DuckDuckGo`);
   } return out;
 }
-async function wikiOpenSearchSource(q, sig, transport) {
+async function wikiOpenSearchSource(q, sig, transport, fresh) {
   if (!q || q.trim().length < 3) return ''; if (/^(who is|define\s)/i.test(q.trim())) return '';
   const osUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=3&format=json&origin=*`;
-  const os = await cachedJson(osUrl, sig, transport);
+  const os = await cachedJson(osUrl, sig, transport, fresh);
   const titles = Array.isArray(os?.[1]) ? os[1] : []; const urls = Array.isArray(os?.[3]) ? os[3] : []; if (!titles.length) return '';
-  const summaries = await Promise.allSettled(titles.slice(0,2).map((title) => cachedJson(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`, sig, transport)));
+  const summaries = await Promise.allSettled(titles.slice(0,2).map((title) => cachedJson(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`, sig, transport, fresh)));
   let out = ''; for (let i=0;i<Math.min(3,titles.length);i++) { const title=titles[i]; const url=urls[i]||`https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g,'_'))}`; const s=summaries[i]?.status==='fulfilled'?summaries[i].value:null; const extract=s?.extract?String(s.extract).slice(0,260):(Array.isArray(os?.[2])?String(os[2][i]||'').slice(0,220):''); out+=fmt('WIKI OPENSEARCH', `${title}${s?.type==='disambiguation'?' (disambiguation)':''}`, url, (extract||title).trim()); } return out;
 }
-async function openverseSource(q, sig, transport, limiter) {
+async function openverseSource(q, sig, transport, limiter, fresh) {
   if (!q || String(q).trim().length === 0) return '';
   const visualRe = /\b(image|photo|picture|logo|cover|artwork|painting|diagram|icon|cat|dog|map|chart|poster|flag|portrait)\b/i;
   if (!visualRe.test(String(q)) && String(q).trim().split(/\s+/).length < 2) return '';
   const url = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=3`;
   const k = 'asm:' + hashUrl(url);
-  const hit = cacheGet(k);
+  const hit = fresh ? null : cacheGet(k);
   if (hit !== null) {
     const results = Array.isArray(hit?.results)?hit.results:[];
     if(!results.length) return '';
     return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
   }
   if (limiter) await limiter.take();
-  const j = await cachedJson(url, sig, transport);
+  const j = await cachedJson(url, sig, transport, fresh);
   const results = Array.isArray(j?.results)?j.results:[]; if(!results.length) return '';
   return results.map((r) => fmt('OPENVERSE', (r.title||r.foreign_landing_url||q.slice(0,40)).slice(0,80), r.foreign_landing_url||r.url||`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}`, `${r.creator?`by ${r.creator}`:''} · ${r.license?`${r.license} ${r.license_version||''}`.trim():'open license'} · ${r.license_url||'https://creativecommons.org/licenses/'} — via Openverse`.trim())).join('');
 }
-async function mwmblSource(q, sig, transport) {
+async function mwmblSource(q, sig, transport, fresh) {
   if (!q || q.trim().length < 3) return '';
   const url = `https://api.mwmbl.org/search/?s=${encodeURIComponent(q)}`;
-  const j = await cachedJson(url, sig, transport);
+  const j = await cachedJson(url, sig, transport, fresh);
   const results = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : []);
   if (!results.length) return '';
   return results.slice(0,3).map((r) => fmt('MWMBl', (r.title || r.name || q.slice(0,60)).slice(0,80), r.url || r.link || url, `${stripTags(r.extract || r.snippet || r.description || '').slice(0,220)} — via mwmbl`)).join('');
@@ -808,8 +808,9 @@ export const SOURCE_NAMES = Object.keys(TAG);
 
 /** query -> { markdown, sources, failures, perSource }. `transport` replaces
  *  the platform fetch per call (the Sweep's corpus-backed transport rides
- *  this seam); Sources never reach for globals themselves. */
-export async function webSearch(query, { transport = fetch } = {}) {
+ *  this seam); Sources never reach for globals themselves. `fresh: true`
+ *  skips the sessionStorage cache so the call makes real network requests. */
+export async function webSearch(query, { transport = fetch, fresh = false } = {}) {
   const failures = [];
   const withMs = (name, fn) => (async () => {
     const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -855,16 +856,16 @@ export async function webSearch(query, { transport = fetch } = {}) {
     withMs('openmeteo', (sig) => openmeteoSource(query, sig, transport, getGeo)),
     withMs('worldbank', (sig) => worldbankSource(query, sig, transport, getGeo)),
     withMs('endoflife', (sig) => endoflifeSource(query, sig, transport)),
-    withMs('cep', (sig) => cepSource(query, sig, transport)),
-    withMs('wdqs', (sig) => wdqsSource(query, sig, transport)),
-    withMs('jinaweb', (sig) => jinawebSource(query, sig, transport, jinaLimiter)),
-    withMs('jinanews', (sig) => jinanewsSource(query, sig, transport, jinaLimiter)),
+    withMs('cep', (sig) => cepSource(query, sig, transport, fresh)),
+    withMs('wdqs', (sig) => wdqsSource(query, sig, transport, fresh)),
+    withMs('jinaweb', (sig) => jinawebSource(query, sig, transport, jinaLimiter, fresh)),
+    withMs('jinanews', (sig) => jinanewsSource(query, sig, transport, jinaLimiter, fresh)),
     withMs('dictionary', (sig) => dictionarySource(query, sig, transport)),
     withMs('tvmaze', (sig) => tvmazeSource(query, sig, transport)),
-    withMs('ddgia', (sig) => ddgiaSource(query, sig, transport)),
-    withMs('wiki_os', (sig) => wikiOpenSearchSource(query, sig, transport)),
-    withMs('openverse', (sig) => openverseSource(query, sig, transport, anonLimiter)),
-    withMs('mwmbl', (sig) => mwmblSource(query, sig, transport)),
+    withMs('ddgia', (sig) => ddgiaSource(query, sig, transport, fresh)),
+    withMs('wiki_os', (sig) => wikiOpenSearchSource(query, sig, transport, fresh)),
+    withMs('openverse', (sig) => openverseSource(query, sig, transport, anonLimiter, fresh)),
+    withMs('mwmbl', (sig) => mwmblSource(query, sig, transport, fresh)),
   ];
   const settled = await Promise.allSettled(jobs);
   const metas = settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
