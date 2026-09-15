@@ -76,7 +76,7 @@ baselines"; the committed numbers are 160 and 22).
 | --- | --- | --- | --- | --- |
 | R01 | Central, complete required coverage; enforceable classification | `scripts/verify.mjs`, `run-tests.mjs`, `validate-manifest.mjs`, `test/manifest.json` | hosted CI `34970772333` step 9 ran all classes; `test/ci-guards.test.mjs` (11 tests, green) rejects unclassified/duplicate/missing paths, zero-test and retry-only suites | implemented + verified |
 | R02 | Deterministic browser + a11y verification of the staged artifact | `test/browser/**`, `fixture-server.mjs`, `scripts/serve-site.mjs` | hosted `34989501324`: 88 chromium tests green inside the gate; firefox+webkit leg **160 tests green on a hosted runner** in the first `Cross-browser` run `34990031960` (8m01s); `artifacts/results/browser-playwright.json` `expected 88, flaky 0` | implemented + verified |
-| R03 | Lockfile-pinned, vendored runtime deps; advisories; Dependabot | `package.json`/`package-lock.json`, `build-site.sh` VENDOR_MAP, `check-deps.mjs`, `audit-policy.mjs` + dated exception, `.github/dependabot.yml` | verify steps 8 and 10 (hosted, inside step 9); `npm ci` used by CI; exceptions file is the only accepted finding; after the merge Dependabot opened grouped npm PRs `#48`/`#49` (`deps-dev`) and `#48`'s `build-and-test` passed | implemented + verified (Dependabot alerts + security updates also enabled, §7) |
+| R03 | Lockfile-pinned, vendored runtime deps; advisories; Dependabot | `package.json`/`package-lock.json`, `build-site.sh` VENDOR_MAP, `check-deps.mjs`, `audit-policy.mjs` + dated exception, `.github/dependabot.yml` | verify steps 8 and 10 (hosted, inside step 9); `npm ci` used by CI; exceptions file is the only accepted finding; after the merge Dependabot's grouped `deps-dev` PRs arrived and the gate sorted them: `#48` (yaml 2.8.3 → 2.9.1) green (`34989620823`) and landed with this change set; `#49` (vitest 4 → 5, a major) fails `npm ci` (`34989651920`) and is deferred (§6) | implemented + verified (Dependabot alerts + security updates also enabled, §7) |
 | R04 | Immutable `_site/` artifact, identity, promotion guard | `build-site.sh`, `site-inventory.mjs`, `build-info.mjs` | `_site` = 23 files, 537,841 B; hosted step 10 re-verified the digest inside the gate and again as the promotion guard; the merge published that same payload (deployment `6462600548`), and the live `build-info.json` reports commit `4e6b272` with a matching wasm digest | implemented + verified |
 | R05 | Consolidated workflows, honest required gate, deploy privileges, freshness | `.github/workflows/ci.yml` (replaces `deploy.yml`), `workflow-invariants.mjs` | hosted `34989501324` (push to `main`): `build-and-test` 3m20s → `deploy` 11s → `Deployed-site smoke` 12s, all success; the freshness gate read the tip of `main` before publishing; red PR runs show the gate failing honestly | implemented + verified |
 | R06 | Explicit toolchains, pinned SHAs, minimal permissions | `toolchain.mjs` pins, `install-toolchain.sh` (SHA-verified WABT), `install-lint-tools.sh`, workflow `uses:` at full SHAs | hosted: Node `24.21.0` installed from the pin, WABT `1.0.41` digest-verified, `npm run toolchain` step green; `workflow-invariants` `uses-pinned`, `permissions-declared`, `privileged-scope` | implemented + verified |
@@ -118,6 +118,8 @@ committed test that fails if the guard is deleted or weakened.
 | Run | Event / ref | Result |
 | --- | --- | --- |
 | [CI 34989501324](https://github.com/nicolas-found42/assembly-agent/actions/runs/34989501324) | `push` to `main`, `4e6b272` | first publish run: `build-and-test` **success** 3m20s → `deploy` **success** 11s (freshness gate read the tip, then `actions/deploy-pages`) → `Deployed-site smoke` **success** 12s; Pages deployment `6462600548` |
+| [CI 34989620823](https://github.com/nicolas-found42/assembly-agent/actions/runs/34989620823) | `pull_request`, PR `#48` head `996439b` | `build-and-test` **success** 3m23s — the first grouped `deps-dev` bump (yaml 2.8.3 → 2.9.1) passes the gate; `deploy` + `Deployed-site smoke` skipped (push-to-main only) |
+| [CI 34989651920](https://github.com/nicolas-found42/assembly-agent/actions/runs/34989651920) | `pull_request`, PR `#49` head `84a0b1d` | `build-and-test` **failure** 17s at `Install npm dependencies` — `npm ci` rejects the vitest 5 tree with `ERESOLVE`: `@cloudflare/vitest-pool-workers@0.22.0` peers `vitest ^4.1.0`. The gate refusing a resolution it cannot install, not a test failure (§6) |
 | [Live health 34990029186](https://github.com/nicolas-found42/assembly-agent/actions/runs/34990029186) | `workflow_dispatch`, `main` | **success** — first run of the scheduled workflow; non-generating checks only, probe reported as not configured |
 | [Cross-browser 34990031960](https://github.com/nicolas-found42/assembly-agent/actions/runs/34990031960) | `workflow_dispatch`, `main` | **success** 8m01s — first run of the scheduled workflow; firefox + webkit, 160 tests |
 | [CI 34986386666](https://github.com/nicolas-found42/assembly-agent/actions/runs/34986386666) | `pull_request`, head `950422c` | `build-and-test` **success** 3m18s — the full 11-step gate on `ubuntu-24.04`: `RUNNER offline PASS (17/17)`, worker, `RUNNER browser PASS`, `LINT PASS (8/8)`, `SENTINEL OK`, and `INVENTORY OK` twice (once inside the gate, once as the promotion guard); `deploy` + `Deployed-site smoke` skipped (push-to-main only) |
@@ -129,9 +131,12 @@ committed test that fails if the guard is deleted or weakened.
 | [CI 34927815616](https://github.com/nicolas-found42/assembly-agent/actions/runs/34927815616) | `pull_request`, `b8bc581` | **failure at step 9** — visual baseline mismatch (`toHaveScreenshot(expected) failed`) |
 | [CI 34929670917](https://github.com/nicolas-found42/assembly-agent/actions/runs/34929670917) | `pull_request`, `46974a3` | **failure at step 9** — dialogs baseline mismatch; fixed by runner-rendered baselines (`308b9ff`) |
 
-Ten of the last eleven hosted runs are green; the four red ones each failed *inside*
-the required gate and each produced a fix, so the gate is demonstrated to fail
-closed on a runner rather than only locally.
+Ten of the last eleven *workflow* runs are green (Dependabot's own update jobs are
+not workflow runs and are excluded). Five red runs are recorded above, and each
+one failed *inside* the required gate or its install step rather than in a side
+channel: four produced a fix, and the fifth is the gate refusing a dependency tree
+it cannot install (`#49`, §6) — so the gate is demonstrated to fail closed on a
+runner rather than only locally.
 
 `cross-browser.yml` and `live-health.yml` could not run before the merge: GitHub
 resolves workflow files from the default branch, so
@@ -165,10 +170,13 @@ campaign publication now satisfies the vendor/font/build-info contract.
 
 - `npm run verify` (coordinator-run) — **PASS 11/11**, run repeatedly; expected
   count `expected 88, unexpected 0, flaky 0` in the Playwright report. The staged
-  tree digest is stable for a given commit (`sha256:7a891fe7…` for tip `9313d41`,
-  `sha256:e91832bd…` for `7841592`, 23 files, 537,841 bytes) — it tracks the commit
-  because `_site/build-info.json` records it, and everything else in the tree is
-  byte-identical across runs and platforms.
+  tree digest is stable for a given commit and lockfile (`sha256:7a891fe7…` for
+  tip `9313d41`, `sha256:e91832bd…` for `7841592`, 23 files, 537,841 bytes) — it
+  tracks them because `_site/build-info.json` records both the commit and
+  `lockfileSha256`, and everything else in the tree is byte-identical across runs
+  and platforms. (Building the artifact with and without the yaml bump applied in
+  this change set leaves `build-info.json` as the only file that differs, which is
+  that field moving and nothing else.)
 - Class counts from the **final** gate run (after the three new §15 files landed):
   **offline 77** (17 entries), **worker 50**, **browser 88** (chromium),
   **scheduled-browser 160** (firefox 80 + webkit 80 — re-run green on this tree,
@@ -251,6 +259,20 @@ image change would show up as a screenshot diff, never as an auto-accept.
 
 Residual risks:
 
+- **The vitest 5 upgrade is deferred, and cannot yet land (Dependabot `#49`).**
+  `@cloudflare/vitest-pool-workers` — latest published release `0.22.0`, which is
+  what this repository uses — peers `vitest ^4.1.0`, `@vitest/runner ^4.1.0` and
+  `@vitest/snapshot ^4.1.0`; vitest 5 inlines its runner and is no longer
+  published as `@vitest/runner`, so there is no version of the second peer that
+  could satisfy a vitest 5 tree at all. The worker class is a required class whose
+  evidence comes from running inside the real workerd runtime *through that pool*
+  (R09), so the bump has no supported landing: `npm ci` on `#49` fails with
+  `ERESOLVE` on a hosted runner (`34989651920`), and `--force`/`legacy-peer-deps`
+  would only test an unsupported peer combination with a mismatched runner
+  implementation. vitest stays on `^4.1.0` until the pool publishes vitest 5
+  support, or until the worker class is moved onto a different workerd harness —
+  a change that would give up the pool's current-runtime property and is not part
+  of this campaign.
 - Remote `img`/`video`/`audio` sources and the inline `style` attribute remain
   allowed after sanitization (the inline attribute can still name a remote
   `url()`); forbidding inline styles is a broader content decision and was not
@@ -315,7 +337,9 @@ Activated in production: the campaign site is live (`4e6b272`, deployment
    security updates are on and `bash scripts/settings-apply.sh --check` exits 0;
    the `cloudflare-worker` environment exists with a `main`-only branch policy
    and a required reviewer. Dependabot opened its first grouped npm PRs
-   (`#48`, `#49`) within minutes of the merge, and `#48`'s required check passed.
+   (`#48`, `#49`) within minutes of the merge; `#48`'s required check passed and
+   its yaml bump landed with this change set, while `#49`'s vitest 5 major cannot
+   install against the worker pool and is deferred (§6).
 5. Worker deployment last: add the two Cloudflare environment secrets
    (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) and set
    `ENABLE_WORKER_DEPLOY=true`, dispatch `worker-deploy.yml`, verify the recorded
