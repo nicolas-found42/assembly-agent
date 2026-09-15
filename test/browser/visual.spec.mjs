@@ -73,9 +73,23 @@ async function settle(page) {
   await page.evaluate(() => document.fonts.ready.then(() => true));
 }
 
+/** One set of options for every shot: `animations` cancels the infinite CRT
+ *  sweep, `caret` hides the text caret — a focused input keeps its caret and
+ *  the caret's blink phase is its own animation, which the app does not own. */
+const SHOT = { animations: 'disabled', caret: 'hide' };
+
 async function shot(page, name) {
   await settle(page);
-  await expect(page).toHaveScreenshot(`${name}.png`, { animations: 'disabled', caret: 'hide' });
+  await expect(page).toHaveScreenshot(`${name}.png`, SHOT);
+}
+/** Soft so one bad shot does not hide the other three: each dialog gets its own
+ *  shot and its own diff, instead of the first failure ending the test and
+ *  leaving the later baselines untested. It is `shot()` minus the hard
+ *  assertion — and it goes through the same settle, or the autofocus ring the
+ *  dialog opens with would be painted into the shot. */
+async function softShot(page, name) {
+  await settle(page);
+  await expect.soft(page).toHaveScreenshot(`${name}.png`, SHOT);
 }
 
 /** No request may leave a fixture origin, and no fixture may be missing. */
@@ -214,29 +228,30 @@ test('@visual dialogs: chats, assistants, model and settings', async ({ page }) 
 
   await app.openDialog('chats');
   await expect(page.locator('#b-dlg-chats .b-row-t').first()).toHaveText(QUESTION);
-  await shot(page, 'dialog-chats');
+  await softShot(page, 'dialog-chats');
   await app.closeDialog('chats');
 
   await app.openDialog('assistants');
   await expect(page.locator('#b-dlg-assistants .b-tag')).toHaveText('Built-in');
-  await shot(page, 'dialog-assistants');
+  await softShot(page, 'dialog-assistants');
   await app.closeDialog('assistants');
 
   await app.openDialog('model');
   await expect(page.locator('#b-dlg-model')).toContainText('4/4 models');
   await expect(page.locator('#b-dlg-model .b-row-on')).toHaveText('ACTIVE');
-  await shot(page, 'dialog-model');
+  await softShot(page, 'dialog-model');
   await app.closeDialog('model');
 
   await app.openDialog('settings');
   for (const toggle of ['scan', 'curve', 'flicker', 'sound']) {
     await expect(page.locator(`#b-set-${toggle}`)).toBeVisible();
   }
-  await shot(page, 'dialog-settings');
+  await softShot(page, 'dialog-settings');
   await app.closeDialog('settings');
 
   await expectHermetic(app);
   expect(await app.allProblems()).toEqual([]);
+  await expectStateA11y(page, 'visual-dialogs');
 });
 
 test('@visual assistant editor: the new-assistant form', async ({ page }) => {
