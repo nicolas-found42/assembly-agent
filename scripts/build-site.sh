@@ -41,8 +41,8 @@ done
 die() { echo "BUILD FAIL: $*" >&2; exit 1; }
 
 # ── size budgets ────────────────────────────────────────────────────────
-# Baseline measured from a clean build of this commit (evidence: .scratch/ci/evidence/s2-build.md):
-#   dist/agent.wasm  7,069 B (7 KB)      whole _site tree  536,558 B (524 KB)
+# Baseline measured from a clean build (23 files; recorded in §5 of docs/ci-campaign-report.md):
+#   dist/agent.wasm  7,069 B (7 KB)      whole _site tree  537,841 B (525 KB)
 # The staged tree is dominated by vendored bytes, which are pinned: three
 # libraries ~204 KB + three fonts ~61 KB + the app's own js/css ~217 KB. The
 # engine is the only artifact that moves with application code, and its buffers

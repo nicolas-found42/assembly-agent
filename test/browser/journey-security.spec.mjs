@@ -1,9 +1,9 @@
 // journey-security.spec.mjs — journey 10: rendering and Markdown safety (§5.3 item 10).
 //
-// The case list is the one `.scratch/ci/evidence/deps.md` §4 fixed against the
-// real vendored pair (marked 18.0.13 + DOMPurify 3.4.15): 25 hostile cases that
-// must stay inert, plus the inert-but-negative results that are product
-// decisions. Every case runs through the REAL streamed path — the fixture
+// The case list is the one fixed against the real vendored pair (marked 18.0.13 +
+// DOMPurify 3.4.15): 25 hostile cases that must stay inert, plus the
+// inert-but-negative results that are product decisions. Every case runs through
+// the REAL streamed path — the fixture
 // server's SSE frames, the wasm engine's render buffer and js/markdown.js — as
 // its own answer card, never through a synthetic host element:
 //
@@ -162,7 +162,7 @@ test('@security a streamed answer renders prose, links, a long code block and CO
     window.__copied = null;
     navigator.clipboard.writeText = (text) => {
       window.__copied = text;
-      return real ? real(text).catch(() => {}) : Promise.resolve();
+   return real ? real(text).catch(() => { }) : Promise.resolve();
     };
   });
   await copy.click();

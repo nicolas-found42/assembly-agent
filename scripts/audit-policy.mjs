@@ -31,8 +31,8 @@
 // 2 = the advisory service was unavailable.
 //
 // `--report <file>` re-evaluates a captured `npm audit --json` document instead of
-// contacting the registry (triage and the fault-injection harness in .scratch/ci);
-// the required gate never passes it.
+// contacting the registry (triage and the fault-injection drills; see §6 of
+// docs/ci-campaign-report.md); the required gate never passes it.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

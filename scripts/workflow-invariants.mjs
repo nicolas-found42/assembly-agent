@@ -44,8 +44,9 @@
  * NOT PROVEN HERE — a PASS is not evidence for any of these, they need a real run:
   *   GitHub event scheduling and trigger evaluation (GitHub's own expression engine, not the
   *   local evaluator in test/ci-guards.test.mjs); runtime enforcement of the `permissions`
- *   block; environment protection rules and deployment-branch policies (repo settings, see
- *   .scratch/ci/research/pins.md §9); artifact identity/immutability and digests; secret
+ *   block; environment protection rules and deployment-branch policies (repo settings —
+ *   `bash scripts/settings-apply.sh` reads them live and reports a denied read as "not
+ *   verified"); artifact identity/immutability and digests; secret
  *   availability and scoping for forks/Dependabot; the behaviour of action code; and whether a
   *   required check actually gates a merge. The freshness step's no-op and fail-closed
   *   behaviour under a chosen tip is executed by test/ci-guards.test.mjs, not proven here.
@@ -62,7 +63,8 @@ import { parse as parseYaml } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-// Frozen contract values (see local://ci-contracts.md; never derived from the files).
+// Frozen contract values (docs/adr/0013-required-verification-and-test-tiers.md and
+// docs/adr/0014-artifact-promotion-and-deployment-trust-boundaries.md; never derived from the files).
 const REQUIRED_CONTEXT = 'build-and-test';
 const PR_EVENTS = ['pull_request', 'pull_request_target'];
 // Events that put untrusted code/refs in front of a job without a human gate.

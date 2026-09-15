@@ -31,7 +31,7 @@
 //   --vendor-map <file>  read the map from this file instead of
 //                        scripts/build-site.sh. A file without the VENDOR_MAP
 //                        heredoc is taken as the map itself. Used by the
-//                        fault-injection harness in .scratch/ci (gitignored).
+//                        fault-injection drills (see §6 of docs/ci-campaign-report.md).
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';

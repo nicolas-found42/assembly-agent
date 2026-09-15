@@ -1,9 +1,9 @@
 // ci-guards.test.mjs — durable negative proofs for the CI guards themselves.
 //
-// The campaign proved these guards with one-off drills recorded under
-// .scratch/ci/evidence/, which is gitignored: nothing in the repository failed if a
-// guard regressed afterwards. Every case below drives the real guard, so deleting or
-// weakening one makes the matching test fail instead of passing silently.
+// The campaign proved these guards with one-off drills that were never committed:
+// nothing in the repository failed if a guard regressed afterwards. Every case below
+// drives the real guard, so deleting or weakening one makes the matching test fail
+// instead of passing silently.
 //
 // Covered
 //   scripts/validate-manifest.mjs  an unclassified runnable file (rejected and named),

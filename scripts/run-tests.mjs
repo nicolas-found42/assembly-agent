@@ -43,7 +43,7 @@ const REQUIRED_CLASSES = ['offline', 'worker', 'browser'];
 // that regex cannot match its own worked example `ALL PASS` (the `+` demands a
 // qualifier before PASS). Minimal coherent deviation: allow the empty qualifier so
 // `ALL PASS`, `ALL A11Y PASS`, `ALL DECODE-ESCAPE PASS` … all match while junk does
-// not. See .scratch/ci/issues/s1.md.
+// not. Both directions are pinned by test/ci-guards.test.mjs.
 const MARKER_RE = /^ALL(?: [A-Z0-9 :.-]+)? PASS$/m;
 const TEST_CONSTRUCT_RE = /\b(?:test|it|describe)\s*\(|node:assert|assert\s*[.(]/;
 const SOURCE_SCAN = [

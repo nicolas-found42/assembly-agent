@@ -13,7 +13,7 @@
 #     no digest to verify against.
 #   * Every download is checked against the release asset's published SHA-256
 #     (digests below, resolved from the WABT release API and independently
-#     reproduced by streaming the asset; see .scratch/ci/evidence/workflows.md).
+#     reproduced by streaming the asset).
 #     No curl-to-shell installer, no unversioned apt package, no unverified binary.
 #   * The cache lives under artifacts/ (gitignored) so a failed install never
 #     pollutes the work tree and `_site/` is never touched.

@@ -331,7 +331,7 @@ describe("upstream contract (direct entry point, per-test env)", () => {
   // streaming body inside the vitest-pool isolate makes workerd's runtime report an unhandled rejection,
   // which vitest turns into a suite-level error (exit 1) regardless of the test handling the rejection.
   // Re-verified: `res.body.pipeTo(new WritableStream(...))` with a rejection handler still produces two
-  // runtime-level "Errors" and exit 1 (see .scratch/ci/evidence/worker-ops.md §interruption).
+  // runtime-level "Errors" and exit 1 (that path is deliberately not re-run here).
   // What IS covered: an upstream that ends the body mid-stream without `data: [DONE]` (truncation), and
   // upstream failure *before* headers (the 502 case below).
   test("an upstream that truncates the SSE body is forwarded as a truncated body (no fabricated [DONE])", async () => {
