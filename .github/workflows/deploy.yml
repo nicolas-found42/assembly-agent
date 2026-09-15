@@ -25,7 +25,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y wabt
       - run: ./build.sh
       - name: Test (node-safe suites)
-        run: node --test test/sources.test.mjs test/guard.test.mjs test/tool-loop.mjs
+        run: |
+          node --test test/sources.test.mjs test/guard.test.mjs test/tool-loop.mjs test/research.test.mjs test/store.test.mjs test/migration.test.mjs test/models.test.mjs test/ste.test.mjs
+          node test/smoke.mjs
+          node test/a11y.mjs
       - uses: actions/upload-pages-artifact@v5
         with:
           path: .

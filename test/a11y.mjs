@@ -1,9 +1,10 @@
-// test/a11y.mjs — static a11y harness for the Command Line UI + awesome-lists triage.
+// test/a11y.mjs — static a11y harness for the ASM::AGENT chat UI + awesome-lists triage.
 // Verifies the WCAG 2.2 AA done-bar (six clauses, ADR 0006) without needing a live browser.
-// The production UI is the "variant B" Command Line terminal: the static #b-shell /
-// #b-transcript / .b-dock surface in index.html, plus native <dialog> modals created at
-// boot by js/main.js. For axe-level verification, run with puppeteer + axe-core CDN in CI;
-// this harness validates that the required DOM/JS/CSS contracts that make axe pass are present.
+// The production UI is the chat surface: the static #b-shell / .b-header /
+// #b-transcript / .b-composer / .b-status surface in index.html, plus native
+// <dialog> overlays created at boot by js/main.js. For axe-level verification, run with
+// puppeteer + axe-core CDN in CI; this harness validates that the required DOM/JS/CSS
+// contracts that make axe pass are present.
 // Also emits awesome-lists triage verdicts per docs/research/*.md.
 
 import { readFileSync } from 'node:fs';
@@ -33,25 +34,29 @@ function contrastRatio(a, b) {
 }
 
 // ── D3 clause 1: axe critical/serious would be zero if DOM contracts hold ──
-// Terminal shell semantics in index.html; error frames carry role=alert; native
+// Chat shell semantics in index.html; error rows carry role=alert; native
 // <dialog>.showModal() replaced the hand-rolled focus trap and the old model backdrop.
 mustContain('index.html', 'role="status"', 'D3-1: status announcer present');
 mustContain('index.html', 'role="log"', 'D3-1: transcript role=log');
 mustContain('index.html', 'viewport-fit=cover', 'D3-1: viewport-fit');
-mustContain('index.html', 'aria-label="Terminal transcript"', 'D3-1: transcript labeled');
-mustContain('index.html', 'aria-label="Message, or a colon command"', 'D3-1: prompt input labeled');
-mustContain('index.html', 'aria-label="Status line"', 'D3-1: status line group labeled');
+mustContain('index.html', 'aria-label="Chat history"', 'D3-1: transcript labeled');
+mustContain('index.html', 'aria-label="Message"', 'D3-1: message box labeled');
+mustContain('index.html', 'aria-label="Status"', 'D3-1: status strip group labeled');
 mustContain('js/main.js', 'showModal', 'D3-1: native dialog showModal');
-mustContain('js/main.js', "setAttribute('role', 'alert')", 'D3-1: error frames role=alert');
+mustContain('js/main.js', "setAttribute('role', 'alert')", 'D3-1: error rows role=alert');
+mustContain('js/main.js', 'window.__asm.history = historyMessages', 'D3-1: test hook exposes the history only');
 ok('D3-1: hand-rolled focus trap removed', !read('js/a11y.js').includes('trapDialog'), 'js/a11y.js still contains trapDialog — native <dialog> replaced it');
 ok('D3-1: old model backdrop removed', !read('js/models.js').includes('modal-backdrop'), 'js/models.js still contains modal-backdrop');
 
 // ── D3 clause 2: keyboard operability ──
-// Prompt input, `:` command suggestions, and native dialog dismissal are all keyboard-driven.
-mustContain('js/main.js', "key === 'Escape'", 'D3-2: Escape closes dialog and returns to prompt');
-mustContain('js/main.js', "'Tab'", 'D3-2: Tab completes suggestions');
-mustContain('js/main.js', "'ArrowUp'", 'D3-2: ArrowUp navigates suggestions');
-mustContain('js/main.js', "'ArrowDown'", 'D3-2: ArrowDown navigates suggestions');
+// Enter sends, Shift+Enter breaks the line, Tab cycles inside a dialog, Escape
+// closes a dialog or cancels an inline rename, and a closed dialog returns focus
+// to the message box.
+mustContain('js/main.js', "key === 'Enter'", 'D3-2: Enter sends the message');
+mustContain('js/main.js', 'shiftKey', 'D3-2: Shift+Enter inserts a newline');
+mustContain('js/main.js', "'Tab'", 'D3-2: dialog Tab wrap stays inside the dialog');
+mustContain('js/main.js', "'Escape'", 'D3-2: Escape cancels an inline rename');
+mustContain('js/main.js', 'dom.input?.focus({ preventScroll: true })', 'D3-2: dialog close returns focus to the message box');
 mustContain('styles.css', ':focus-visible', 'D3-2: focus-visible');
 
 // ── D3 clause 3: contrast ──
@@ -73,15 +78,22 @@ mustContain('index.html', 'aria-live="polite"', 'D3-5: polite live');
 mustContain('index.html', 'aria-live="off"', 'D3-5: transcript live off');
 mustContain('js/a11y.js', 'announceStatus', 'D3-5: announcer helper exists');
 mustContain('js/main.js', 'announceStatus(', 'D3-5: announcer used');
-mustContain('js/main.js', "'Searching", 'D3-5: tool announce');
+mustContain('js/main.js', "'Searching", 'D3-5: search announce');
 mustContain('js/main.js', 'Response complete', 'D3-5: completion announce');
 ok('D3-5: no per-token live', !read('js/main.js').includes('announceStatus(acc'), 'per-token thrashing detected');
+ok('D3-5: status strip is not a live region', !/id="b-st-progress"[^>]*aria-live/.test(read('index.html')), 'the progress text must be announced through announceStatus only');
 
 // ── D3 clause 6: reflow satisfied by an internal scroll region ──
 // The shell pins the viewport and scrolls inside the transcript, so reflow needs the
 // transcript region to exist and to own its own overflow.
 mustContain('styles.css', '.b-transcript {', 'D3-6: transcript scroll region');
 mustContain('styles.css', 'overflow-y: auto', 'D3-6: internal scrolling');
+
+// ── chat copy contract: no command-mode affordances anywhere ──
+const ui = read('index.html') + read('js/main.js') + read('styles.css');
+ok('copy: no command-mode affordances left',
+  !/guest@asm|b-sug|execLine|sugItems|:mem|:wat|TOK\/S|PRESET|terminal/i.test(ui),
+  'an old command-mode string is still present in index.html / js/main.js / styles.css');
 
 // ── triage: awesome-lists verdicts ──
 const triageRows = [
@@ -131,7 +143,7 @@ ok('triage: vanilla trap decision documented', true, '');
 ok('triage: no runtime FAIL shipped', true, '');
 
 // ── report ──
-console.log('=== a11y harness — done-bar checks (Command Line UI) ===');
+console.log('=== a11y harness — done-bar checks (chat UI) ===');
 console.log(`PASS ${passes.length} / ${passes.length + failures.length}`);
 for (const p of passes) console.log(`ok  : ${p}`);
 for (const f of failures) console.log(`FAIL: ${f}`);
@@ -155,16 +167,17 @@ for (const [name, , , , , , verdict, notes] of triageRows) {
 console.log('');
 console.log('=== iOS VoiceOver spot-check (10 min, manual, not gate) ===');
 console.log(`
-1. iPhone Safari 375×667 (and 360×640 Android Chrome), open https://nicolas-found42.github.io/assembly-agent/
+1. iPhone Safari 375x667 (and 360x640 Android Chrome), open https://nicolas-found42.github.io/assembly-agent/
 2. Enable VoiceOver (Settings > Accessibility > VoiceOver) and use Safari.
-3. Swipe to the transcript: rotor announces "Terminal transcript, log" and replays history without per-token stutter.
-4. Swipe to the prompt line: hear "Message, or a colon command, text area" → type a message → double-tap send ("Send message").
-5. Type ":" alone → the command suggestions list appears; ArrowDown/ArrowUp move between suggestions, Tab completes, Enter runs.
-6. Run ":model" → the dialog is announced as a modal; the filter field is labeled; the chips toggle; Escape (two-finger scrub) closes it and focus returns to the prompt.
-7. Swipe to the status line → hear "Status line" with MODEL/PRESET/KEY/MEM/MSG/TOK/S/STATE segments; activating a segment opens its dialog.
-8. Send a query → hear "Searching …" then "Response complete"; the transcript is not re-announced per streamed token; the send button becomes "Stop generating".
-9. With Reduce Motion on (Settings > Accessibility > Motion > Reduce Motion), verify the caret, spinner, and scanline flicker stop and the terminal stays readable.
-10. Rotate and open the keyboard: the dock stays above the keyboard (visualViewport) and safe-area insets are not clipped.
+3. Swipe to the transcript: rotor announces "Chat history, log" and replays history without per-token stutter.
+4. Swipe to the message box: hear "Message, text area" → type a question → double-tap Send ("Send message").
+5. During the answer: hear "Searching the web.", "Writing your answer." and "Response complete."; the transcript is not re-announced per streamed word.
+6. The send button becomes "Stop" while a turn runs; double-tap it and hear the turn stop.
+7. Open Model → the dialog is announced as a modal; the filter field is labeled; the chips toggle; Escape (two-finger scrub) closes it and focus returns to the message box.
+8. Open Settings → the key field is masked; Show/Hide works; the Remember checkbox is off by default; the explanation is announced with the field.
+9. Open Chats → each row is reachable, Open/Rename/Export/Delete are separate buttons, and Delete asks for confirmation.
+10. With Reduce Motion on (Settings > Accessibility > Motion > Reduce Motion), verify the scanline sweep, flicker, and streaming cursor stop and the chat stays readable.
+11. Rotate and open the keyboard: the dock stays above the keyboard (visualViewport) and safe-area insets are not clipped.
 Mark manual steps as performed on real device; harness passes if static checks green.
 `);
 

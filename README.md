@@ -1,39 +1,28 @@
 # ASM::AGENT — amber CRT chat agent
 
-<p align="center">
-  <img src="docs/demo.gif" width="900" alt="Typing 'what are the 5 latest AI models on openrouter' → NVIDIA Nemotron 3.5 Lightning streams table with web_search fan-out" />
-</p>
-
----
-
 ## What it is
 
-A single-page amber phosphor terminal that does one thing well: chat with any OpenRouter model through a WAT core that owns streaming, history, and model catalog.
+ASM::AGENT is a single-page chat that talks to OpenRouter models through a WAT
+engine. Every accepted request gets a fresh web search before the model writes an
+answer.
 
-- **WAT engine** `src/agent.wat` → `dist/agent.wasm` — zero imports, linear-memory I/O. All JS↔WASM comms via `scratch` (`0x80000`) and control slots (`0x00`). See `:mem` for live region sizes.
-- **Model catalog** — `GET https://openrouter.ai/api/v1/models` → TLV → WASM `0x20000..0x30FFF` (512×128B records, pool `0x31000`). Sort/filter in WASM (`PRICE/CONTEXT/LATENCY/THROUGHPUT/LATEST`), selection in `localStorage['asm.activeModel']`.
-- **Chat loop** `js/bridge.js` — SSE → `E.sse_feed()` → `E.render_ptr()/E.render_len()` drain, up to 5 tool rounds. `web_search` fan-out `js/search.js` (keyless-first: Wikipedia/HN/DuckDuckGo/StackExchange/GitHub + optional Tavily/Brave/Jina).
-- **CRT** `styles.css` — scanlines, curvature, flicker, `VT323` + `JetBrains Mono`, status line `SESSION · MODEL · PRESET · KEY · MEM · MSG · TOK/S · STATE`.
-
-Verified model id: `GET /api/v1/models` → 415 ids, `nvidia/nemotron-3.5-lightning:free` exists.
-
-
-## Demo thread — the GIF
-
-> The GIF predates the Command Line UI (August 2025): it shows the retired HUD/sidebar layout. The engine, streaming, and tool-card behavior shown are unchanged.
-
-- **Query:** `what are the 5 latest AI models on openrouter`
-- **Model:** `NVIDIA: Nemotron 3.5 Lightning (free)` → `nvidia/nemotron-3.5-lightning:free`
-- **Flow shown (14s):** `SCAN`/`CURVE` flash → **MODEL** combobox filter `nemotron` → select → type query (variable speed) → `SEND` → `OPERATOR ▸` bubble → `▶ web_search({"query":"latest AI models OpenRouter August 2025"})` card (SEARCHING → 3 SOURCES, then collapsed) → `AGENT ▸` streaming markdown table (cursor `▊`) → final table + source links → **ASM** inspector peek (`WAT` → `MEMORY` bars) → tail.
-
-
-Answer content in GIF is canned from live catalog (`openrouter.ai/collections/free-models`, Aug 2025):
-
-1. **Nemotron 3.5 Lightning** — `nvidia/nemotron-3.5-lightning:free` (hybrid Mamba-MoE, 1M context)
-2. **Nemotron 3 Ultra 550B A55B** — `nvidia/nemotron-3-ultra-550b-a55b:free`
-3. **Laguna S 2.1** — `poolside/laguna-s-2.1:free`
-4. **Gemma 4 26B A4B** — `google/gemma-4-26b-a4b-it:free`
-5. **Nemotron Nano 9B V2** — `nvidia/nemotron-nano-9b-v2:free`
+- **One built-in assistant** — ASM::AGENT speaks with a calm, precise computer
+  voice. A library holds custom assistants that you can create, edit, duplicate,
+  delete, import, and export.
+- **Research first** — every request runs a fresh web search before any model
+  call, for every assistant. A keyless fan-out of 28 sources feeds the answer.
+  Search states are honest: the answer footer says when sources were unreachable
+  or when the search was not available.
+- **Wording check** — answers from the built-in assistant pass mechanical
+  ASD-STE100-style checks. A violation can trigger one corrective rewrite. The
+  rewrite must keep every link, code block, number, and quotation. A failed
+  rewrite is dropped and the original answer stays.
+- **WAT engine** — `src/agent.wat` → `dist/agent.wasm` (zero imports,
+  linear-memory I/O) owns streaming, history, and catalog sort/filter. The engine
+  is unchanged. Its internals are no longer part of the product surface.
+- **Keys are optional for free models** — without a key, free models run through
+  the free proxy. Paid models need your OpenRouter key. A new key lasts for the
+  browser session by default.
 
 ## Quick start
 
@@ -43,67 +32,117 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-1. Run `:key` → paste OpenRouter key (`sk-or-...`) → **TEST** → `VALID ✓` (checks `GET /api/v1/key`); anonymous users can skip this and stay on `:free` models via the Proxy
-2. Run `:model` (or click **MODEL** on the status line) → pick **NVIDIA: Nemotron 3.5 Lightning (free)** (or any model; catalog loads from OpenRouter, TLV'd into WASM)
-3. Type a query at the prompt, **ENTER** to transmit — `:` enters command mode, `?` or `:keys` lists everything
+1. The first chat starts with the built-in assistant and the automatic model
+   ("Automatic — newest free"). Free models run without a key through the proxy.
+2. To use paid models, open **Settings**, paste an OpenRouter key (`sk-or-...`),
+   and save it. After that, choose the model from the **Model** dialog.
+3. Type a question and press **ENTER**. The assistant searches the web first,
+   then writes the answer and shows the sources below it.
 
-Optional search keys (fan-out still works without them): Tavily `tvly-…`, Brave `BSA…`, Jina `jina_…` in the `:key` dialog.
-
-No install beyond `wabt`. The site is static; `dist/agent.wasm` is the only build artifact.
+No install beyond `wabt`. The site is static. `dist/agent.wasm` is the only build
+artifact.
 
 ## Features
 
-- **WAT-first** — `memory 16`, bump allocators, SSE delta parser, tool-call detector, 5-sort indices in 0x40000, no JS for catalog ranking.
-- **Streaming** — SSE bytes staged into `0x80000`, fed via `E.sse_feed(ptr,len)`, incremental `renderMarkdown` via `marked` + `DOMPurify` + `hljs`.
-- **Tools** — `web_search` declared to model; WASM sets `tool_pending` → JS runs `webSearch(query)` → `E.tool_result_append` → next round with tool results in history.
-- **Sessions** — `localStorage` (`asm.sessions`, `asm.activeSession`, `asm.settings`), markdown/JSON export, system-prompt presets.
-- **Command surface** — `:` commands (`:model :preset :session :key :mem :wat :status :scan :curve :flicker :sound :clear :keys`) with tab completion; native `<dialog>` overlays for pickers.
-
-## Memory map (live via `:mem`)
-
-| Range | Name | Notes |
-|-------|------|-------|
-| `0x00000-0x00FFF` | Control | `MAGIC 0x41534D31`, state, bumps, lens |
-| `0x01000-0x04FFF` | SSE rem | line-remainder (16 KiB) |
-| `0x08000-0x1FFFF` | History | 96 KiB bump arena |
-| `0x20000-0x30FFF` | Models | `max 512 ×128B` |
-| `0x31000-0x3FFFF` | Pool | 60 KiB model strings |
-| `0x40000-0x42FFF` | Index | 5 sort tables + filtered |
-| `0x50000-0x6FFFF` | Render | 128 KiB pending markdown |
-| `0x80000-0x8FFFF` | Scratch | 64 KiB JS staging |
-| `0x90000+` | Heap | grows to 16 MiB |
+- **Chats** — one transcript, a **New chat** button, and a Chats dialog to open,
+  rename, export (`.md` or `.json`), and delete chats. Each chat keeps its own
+  model choice and a copy of the assistant instructions it started with. A new
+  chat always starts with the built-in assistant; choosing a different assistant
+  starts a new chat.
+- **Assistant library** — create, edit, duplicate, and delete custom assistants.
+  The built-in record is protected. Import and export use
+  `{format:'asm-agent.assistants',version:1}`. Import never overwrites the
+  built-in assistant or an existing name: a clash becomes a copy, and the file
+  size is capped at 256 KB. Custom instructions cannot turn the web search off.
+- **Fresh research per request** — a deterministic planner (`js/research.js`)
+  builds each search query from local code only, before any bytes leave the
+  browser. A greeting gets a harmless generic query. "Continue" or "make it
+  shorter" derives its topic from earlier user messages. Private writing and
+  translation material never reaches a search. Credentials, email addresses, and
+  long quoted spans are stripped at every search boundary. The first lookup runs
+  before the first model call and bypasses the session caches.
+- **Search budget** — at most 5 research rounds per request, including the first
+  mandatory one. When the budget is spent, one final tools-disabled pass forces
+  an answer from the results already in the conversation.
+- **Honest search states** — a failed source does not block the answer. The
+  footer shows "Some sources were unreachable." or "Web search was not available
+  for this answer." when those states occur.
+- **Stop and retry** — Stop cancels the research and the generation. Retry runs
+  the research again and does not duplicate your message.
+- **Wording check** — after a built-in answer settles, `js/ste.js` checks the
+  prose. The implemented checks are: sentence length over 20 words (rule 5.1),
+  a paragraph over six sentences (rule 6.6), a passive-voice heuristic (rule
+  3.6), a progressive `-ing` heuristic (rules 3.5 and 3.2), a double negative
+  (no Issue 9 rule number; mapped from Global English rule 3.12 by TechScribe),
+  and more than one command per sentence (rule 5.2). The check is a partial
+  approximation. The licensed ASD-STE100 Issue 9 approved-word dictionary is not
+  bundled, so dictionary and word-form checks are not implemented. No certified
+  STE compliance is claimed.
+- **Model catalog** — the full OpenRouter catalog is always listed, newest
+  first. Paid models stay visible without a key but locked ("Your API key
+  required"). The automatic mode ("Automatic — newest free") resolves the newest
+  free text model once, when the chat is created, and pins it. A catalog refresh
+  never changes an existing chat. A manual choice persists per chat. There is no
+  automatic fallback on error: use Retry or change the model. The catalog never
+  selects a paid model when the free pool is empty.
+- **Keys** — a new key is session-only (`sessionStorage asm.openrouter.key`).
+  "Remember on this device" persists it to `asm.settings.key`. "Remove key"
+  clears both copies and stops further paid rounds in the running turn. A search
+  query never carries a key.
+- **Storage** — chats, assistants, and settings stay in the browser
+  (`asm.chats.v2`, `asm.assistants.v2`, `asm.settings`). A one-time migration
+  converts older data, writes a backup, and never deletes the legacy keys.
+- **CRT** — amber phosphor theme with scanline, curvature, flicker, and sound
+  toggles in Settings.
 
 ## Project structure
 
 ```
-index.html          # Command Line shell: transcript, status line, prompt dock
+index.html          # chat shell: header, transcript, composer, status line
 styles.css          # amber phosphor theme, scanlines/vignette/flicker
 js/
-  main.js           # boot, turn loop, :commands, dialogs, status line
-  bridge.js         # WASM instantiate + send() loop (5 tool rounds)
-  models.js         # catalog fetch + TLV + sort/filter API
-  search.js         # parallel fan-out search
-  sessions.js       # localStorage sessions/settings
-  markdown.js       # marked + purify + hljs
-src/agent.wat       # hand-written engine (1072 lines)
+  main.js           # boot, turn loop, dialogs, transcript rendering
+  bridge.js         # WASM instantiate + turn pipeline (research, rounds, wording pass)
+  research.js       # deterministic query planning + privacy minimization
+  search.js         # parallel keyless source fan-out
+  models.js         # catalog fetch + TLV + sort/filter + newest-free query
+  store.js          # v2 persistence: assistants, chats, settings, keys, migration
+  persona.js        # built-in assistant instructions + policy preamble
+  ste.js            # ASD-STE100-style prose checks + rewrite integrity gate
+  guard.js          # hedge pass, budget nudge, tool-argument repair
+  markdown.js       # marked + DOMPurify + highlight.js
+  a11y.js           # status announcements
+src/agent.wat       # hand-written engine (SSE scanner, history arena, catalog)
 dist/agent.wasm     # build output (wat2wasm)
-test/smoke.mjs      # 40 asserts, no network (node test/smoke.mjs)
-docs/demo.gif       # 900×668 14s 15fps 1.5MB — 2× retina, frame-capture
-docs/demo.mp4       # 900×668 14s 0.9MB — mp4 fallback true color
+worker/api-chat.js  # free-model proxy (Cloudflare Worker)
+wrangler.toml       # proxy deploy config
 ```
 
 ## Testing
 
 ```bash
 ./build.sh
-node test/smoke.mjs   # 40 asserts: MAGIC, heap_alloc monotonic, history roundtrip, TLV load/sort/filter, SSE streaming, tool pending
+node --test test/sources.test.mjs test/guard.test.mjs test/tool-loop.mjs test/research.test.mjs test/store.test.mjs test/migration.test.mjs test/models.test.mjs test/ste.test.mjs
+node test/smoke.mjs   # engine smoke: MAGIC, heap, history, TLV, SSE, tool pending
+node test/a11y.mjs    # static a11y contract (WCAG 2.2 AA done-bar)
 ```
+
+`test/a11y.browser.mjs` is the manual browser harness (needs puppeteer and
+axe-core). CI (`.github/workflows/ci.yml`) and the Pages deploy run the eight
+`node --test` files plus `smoke.mjs` and `a11y.mjs`.
 
 ## Notes
 
-- The GIF's answer is intentionally static for reproducibility; live model answers will vary. The table matches live catalog at capture time (Aug 2025) — re-run `GET /api/v1/models` to verify.
-- 2× retina (`deviceScaleFactor:2` 2560×1900 → `scale=900:-2:flags=lanczos`) fixes v1 700px blur. Manual frame capture (`page.screenshot` @15fps → `ffmpeg` → `gifski` single palette) preserves `#composer` at bottom — visually verified via `page.screenshot` and gif frame extract.
-- Recording: `puppeteer-core` + Chrome headless new, 1280×950 viewport, 15fps, `deviceScaleFactor:2`. Verified beats: `SCAN`/`CURVE` flash, combobox filter `nemotron` → select, `web_search`, streaming table, inspector `MEMORY`.
-- No `package.json` in repo — by design. Capture deps lived entirely in `/tmp/asm-gif`.
-
-*Built on `main` @ `303814e`. Amber CRT forever.*
+- **Deploy** — GitHub Pages serves the repository root as a static site
+  (`.github/workflows/deploy.yml`). There is no build step on the host and no
+  server-side application.
+- **Free proxy** — the Cloudflare Worker in `worker/api-chat.js` forwards
+  `:free` model requests to OpenRouter with the Operator Key. It refuses every
+  other model (`403 NOT_FREE`). The key is set with
+  `wrangler secret put OPENROUTER_KEY`. The Worker allows the GitHub Pages
+  origin, `*.pages.dev`, and localhost. See
+  `docs/adr/0001-proxy-for-free-models.md`.
+- **Paid models** — your own OpenRouter key, read before every request round. A
+  key that is changed or removed stops the turn with an honest message.
+- **Docs** — product decisions live in `docs/adr/`. The glossary is
+  `CONTEXT.md`. CI and deploy run the node-safe suites listed above.
