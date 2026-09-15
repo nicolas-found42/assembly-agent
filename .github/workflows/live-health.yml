@@ -1,0 +1,207 @@
+name: Live health
+
+# Separate from required PR correctness: a scheduled observation of the deployed
+# site, the model catalog and the Worker, plus an opt-in budgeted generation probe.
+# Nothing here runs on pull requests, and no job holds a production credential.
+#
+#   * `health` is read-only and non-generating. It never spends provider quota.
+#   * `report-incident` is the only job with `issues: write`; it is deduplicated by
+#     (service, failure class) and records a recovery when the check passes again.
+#     `scripts/incident.mjs` is a no-op with an explanation when reporting is not
+#     enabled or the token lacks push permission.
+#
+# The generation probe stays disabled until an owner sets repository variable
+# LIVE_HEALTH_ENABLE_GENERATION=true (plus the probe limits, if the defaults are not
+# wanted). With it disabled the run reports the probe as "not configured" instead of
+# claiming a passing generation test.
+#
+# Scheduled runs are observations, not a real-time monitoring SLA: the platform
+# documents that schedules queued at the top of the hour can be delayed or dropped,
+# hence minute 17.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Health observations may queue behind each other; a running observation is
+  # always allowed to finish so its incident record stays coherent.
+  group: live-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      classification: ${{ steps.health.outputs.classification }}
+      codes: ${{ steps.health.outputs.codes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read declared toolchain pins
+        id: pins
+        run: |
+          set -euo pipefail
+          echo "node=$(node scripts/toolchain.mjs --pin node)" >> "$GITHUB_OUTPUT"
+      - name: Set up Node ${{ steps.pins.outputs.node }}
+        # scripts/live-health.mjs uses Node builtins only: no install step, so a
+        # scheduled health check cannot be broken by dependency resolution.
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+      - name: Deployed-site, catalog and Worker checks
+        id: health
+        env:
+          # Opt-in generation probe (repository variable `true`/`1`; unset or any
+          # other value = not configured). The expected commit is GITHUB_SHA, which
+          # the script reads itself, so a served build from another commit is
+          # reported as a stale artifact instead of a broken new one.
+          LIVE_HEALTH_ENABLE_GENERATION: ${{ vars.LIVE_HEALTH_ENABLE_GENERATION }}
+          # Probe budget caps (repository variables). Unset/empty = the script's own
+          # default; the script validates every value it is given and rejects a
+          # non-integer or anything above its hard ceiling with a usage error
+          # before it does any network work.
+          LIVE_HEALTH_MAX_REQUESTS: ${{ vars.LIVE_HEALTH_MAX_REQUESTS }}
+          LIVE_HEALTH_MAX_TOKENS: ${{ vars.LIVE_HEALTH_MAX_TOKENS }}
+          LIVE_HEALTH_MAX_DURATION_MS: ${{ vars.LIVE_HEALTH_MAX_DURATION_MS }}
+          LIVE_HEALTH_MAX_CONCURRENCY: ${{ vars.LIVE_HEALTH_MAX_CONCURRENCY }}
+        run: |
+          set -euo pipefail
+          status=0
+          node scripts/live-health.mjs --mode health --json artifacts/results/live-health.json || status=$?
+          # The classification and the diagnostic codes are produced by the script
+          # itself; only these sanitised values leave this step.
+          # ${...} here is JS template-literal syntax inside node -e '...'.
+          # shellcheck disable=SC2016
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const fs = require("node:fs");
+            let record = { classification: "", checks: [] };
+            try { record = JSON.parse(readFileSync("artifacts/results/live-health.json", "utf8")); } catch {}
+            const codes = (record.checks || [])
+              .filter((c) => c.status === "fail" && typeof c.code === "string" && /^[a-z0-9.-]+$/i.test(c.code))
+              .map((c) => c.code);
+            const out = process.env.GITHUB_OUTPUT;
+            fs.appendFileSync(out, `classification=${record.classification || ""}\n`);
+            fs.appendFileSync(out, `codes=${[...new Set(codes)].join(",")}\n`);
+          '
+          exit "$status"
+      - name: Job summary
+        if: always()
+        env:
+          RECORD: artifacts/results/live-health.json
+        run: |
+          set -euo pipefail
+          {
+            echo "### Live health"
+            echo ""
+            if [ -f "$RECORD" ]; then
+              # ${...} here is JS template-literal syntax inside node -e '...'.
+              # shellcheck disable=SC2016
+              node -e '
+                const { readFileSync } = require("node:fs");
+                const r = JSON.parse(readFileSync(process.env.RECORD, "utf8"));
+                console.log(`- mode: \`${r.mode}\` — generation probe: \`${r.generationProbe}\``);
+                console.log(`- checks: ${r.summary.passed} passed, ${r.summary.failed} failed, ${r.summary.notConfigured} not configured`);
+                console.log(`- classification: \`${r.classification ?? "none"}\` (exit ${r.exitCode})`);
+                if (r.expectedCommit) console.log(`- expected commit: \`${r.expectedCommit}\``);
+                for (const c of r.checks.filter((x) => x.status === "fail")) {
+                  console.log(`  - \`${c.id}\` (${c.category})${c.code ? ` [${c.code}]` : ""}`);
+                }
+              '
+            else
+              echo "- the health script produced no report."
+            fi
+            echo ""
+            echo "Sanitised data only (status, latency, version, diagnostic codes)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the health report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-health-report
+          path: artifacts/results/live-health.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  report-incident:
+    needs: health
+    # Runs on every observation: a failure opens or updates exactly one incident per
+    # (service, class); a pass records the recovery and closes it.
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write # the only job that may write an incident — nothing else here can
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read declared toolchain pins
+        id: pins
+        run: |
+          set -euo pipefail
+          echo "node=$(node scripts/toolchain.mjs --pin node)" >> "$GITHUB_OUTPUT"
+      - name: Set up Node ${{ steps.pins.outputs.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+      - name: Report the incident (deduplicated) or the recovery
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SERVICE: live-health
+          CLASS: ${{ needs.health.outputs.classification || 'infrastructure' }}
+          CODES: ${{ needs.health.outputs.codes }}
+          HEALTH_RESULT: ${{ needs.health.result }}
+        run: |
+          set -euo pipefail
+          # A passing observation records the recovery and closes the open incident;
+          # a failing one opens or updates exactly one. A cancelled or otherwise
+          # inconclusive observation reports nothing — it is not evidence of a
+          # service failure, and filing it would be a false incident.
+          case "$HEALTH_RESULT" in
+            success)
+              echo "health observation passed — recording recovery for ${SERVICE}:${CLASS}"
+              node scripts/incident.mjs \
+                --service "$SERVICE" --class "$CLASS" --codes "$CODES" \
+                --recovery --enable --json artifacts/results/incident.json
+              ;;
+            failure)
+              echo "health observation failed — reporting ${SERVICE}:${CLASS}"
+              node scripts/incident.mjs \
+                --service "$SERVICE" --class "$CLASS" --codes "$CODES" \
+                --enable --json artifacts/results/incident.json
+              ;;
+            *)
+              echo "health observation ended as '$HEALTH_RESULT' (not a pass or a failure) — no incident state change"
+              echo "- incident reporting skipped: the health job ended as \`$HEALTH_RESULT\`." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
+      - name: Explain a skipped report
+        if: failure()
+        run: |
+          {
+            echo "### Incident report did not complete"
+            echo ""
+            echo "scripts/incident.mjs exited non-zero, so the incident state may be unchanged."
+            echo "Reporting is disabled by design when the token lacks push permission; the script says so and exits 0 in that case."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the incident record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-health-incident
+          path: artifacts/results/incident.json
+          if-no-files-found: warn
+          retention-days: 30

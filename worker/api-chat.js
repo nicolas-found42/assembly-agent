@@ -2,6 +2,7 @@
 // Q6 A / Q7 C / Q9 A / Q10 A / Q11 A / Q13 A
 // - POST /api/chat -> forward to OpenRouter with Operator Key only if model endsWith(':free')
 // - 403 NOT_FREE otherwise, 500 if key missing
+// - free-only covers model routing too: a paid `models[]` fallback or `route` is refused
 // - SSE streamed verbatim, no buffering
 // - CORS echo, OPTIONS handled
 // - Stateless log with salted ip hash
@@ -42,6 +43,47 @@ function hashIp(ip, salt) {
 
 export function isFreeModel(id) { return typeof id === 'string' && id.endsWith(':free'); }
 
+/**
+ * Free-only boundary for the model *routing* fields, not only the model id.
+ * OpenRouter's `models` array tries further models — in order — when the primary
+ * one is rate-limited, down, or moderated, and bills the model that ultimately
+ * answered (openrouter.ai/docs/guides/routing/model-fallbacks). A free `model`
+ * with a paid fallback list would therefore spend the Operator Key, so the
+ * routing entries have to pass the same check as `model`. `route` selects a model
+ * by mechanism instead of by the `model` field, so the suffix check cannot cover
+ * it either; unverifiable routing shapes are refused rather than forwarded.
+ */
+export function routesOnlyToFreeModels(body) {
+  if (body?.route) return false;
+  const models = body?.models;
+  if (models === undefined || models === null) return true;
+  return Array.isArray(models) && models.every(isFreeModel);
+}
+
+/**
+ * The only request fields the Operator Key may ever forward upstream. This proxy
+ * exists to serve this repository's own browser client, which sends exactly
+ * `model`, `messages`, `stream` and (for tool-enabled rounds) `tools`
+ * (js/bridge.js); `models` is accepted only in the all-free form that
+ * `routesOnlyToFreeModels` has already checked. Everything else is dropped
+ * rather than forwarded, so a field this repository has not reviewed cannot
+ * spend the Operator Key: OpenRouter bills request-shaping fields such as the
+ * `web` plugin ($4 per 1,000 results —
+ * openrouter.ai/docs/guides/features/server-tools/web-search), and silently
+ * forwarding unknown keys would let any future one do the same.
+ * Adding a field here is a deliberate change, not an accident of pass-through.
+ */
+export const FORWARDED_FIELDS = ['model', 'messages', 'stream', 'tools', 'models'];
+
+/** Build the upstream body from the allowlist, preserving the caller's values. */
+export function forwardedBody(body) {
+  const out = {};
+  for (const field of FORWARDED_FIELDS) {
+    if (body != null && Object.prototype.hasOwnProperty.call(body, field)) out[field] = body[field];
+  }
+  return out;
+}
+
 export async function handleChat(request, env, ctx) {
   const origin = request.headers.get('origin') || '';
   const cors = corsHeaders(origin);
@@ -58,7 +100,7 @@ export async function handleChat(request, env, ctx) {
   catch { return json(400, { error: { message: 'Invalid JSON' } }, cors); }
 
   const model = String(body?.model || '');
-  if (!isFreeModel(model)) {
+  if (!isFreeModel(model) || !routesOnlyToFreeModels(body)) {
     return json(403, { error: { message: 'NOT_FREE — Proxy only serves Free Models (:free). Add your own key in SET for paid models.' } }, cors);
   }
 
@@ -87,12 +129,12 @@ export async function handleChat(request, env, ctx) {
     upstream = await fetch(UPSTREAM, {
       method: 'POST',
       headers: upstreamHeaders,
-      body: JSON.stringify(body),
+      body: JSON.stringify(forwardedBody(body)),
     });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ ipHash, model, status: 'upstream_fetch_error', err: String(e).slice(0, 200) }));
-    return json(502, { error: { message: 'Upstream fetch failed: ' + String(e).slice(0, 300) } }, cors);
+    return json(502, { error: { message: 'Upstream fetch failed' } }, cors);
   }
 
   // If upstream is SSE streaming, pipe verbatim (no buffering) per ADR
@@ -127,7 +169,7 @@ export async function handleChat(request, env, ctx) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    // Only serve /api/chat (and /api/chat/* for versioning)
+    // Only serve the exact /api/chat path; /api/chat/<anything> is not a route.
     if (url.pathname === '/api/chat' || url.pathname === '/api/chat/') {
       return handleChat(request, env, ctx);
     }

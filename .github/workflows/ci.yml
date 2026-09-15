@@ -1,22 +1,306 @@
 name: CI
 
+# One workflow, one required result. `build-and-test` (job id, no `name:` override,
+# so the check context stays exactly `build-and-test`) runs the complete required
+# suite through the frozen gate command; `deploy` publishes the artifact that job
+# produced, and only for a verified push to main.
+#
+# merge_group is intentionally absent: main has no merge queue (the branch
+# protection payload carries no merge_queue and there are no repository rulesets).
+# If a queue is ever enabled, add `merge_group:` here — otherwise the required
+# check never reports for queued merges and they stall.
+
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
+# Read-only by default; the deployment job below is the only place that widens it.
 permissions:
   contents: read
 
+# There is deliberately no workflow-level `concurrency:` block. A workflow-level
+# group with cancel-in-progress would be able to cancel the `deploy` job's own
+# per-environment group and abort an active publication; the required job carries
+# its own PR-scoped group instead. Likewise `build-and-test` has no `name:` — the
+# required status-check context on `main` is that job id, and renaming it would
+# strand every PR behind a pending check. Both gaps are reported by `npm run lint`
+# as advisory zizmor findings; they are intentional and reviewed, not suppressed.
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    # Measured locally: build 0.5s, offline 17.3s, worker 1.3s, packaging <0.1s,
+    # lint/audit seconds. The hosted runner adds npm ci and the pinned WABT and
+    # Chromium downloads; 25 minutes leaves roughly 5x headroom over the
+    # end-to-end first run estimate and bounds a hung suite.
+    timeout-minutes: 25
+    concurrency:
+      # PR verification is keyed by PR number and cancels its own obsolete runs.
+      # Pushes are keyed by ref+SHA so verifying one main commit never cancels
+      # another, and this job-level group can never cancel the deploy job's
+      # github-pages group.
+      group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-ref-{0}-{1}', github.ref, github.sha) }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
-      - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo apt-get install -y wabt
-      - run: ./build.sh
-      - name: Test (node-safe suites)
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read declared toolchain pins
+        # scripts/toolchain.mjs declares the Node and WABT pins; reading them here
+        # (with the Node the image already ships) is the only use of that runtime —
+        # the pinned release is installed by the next two steps, and the pins are
+        # asserted again by `npm run toolchain` below.
+        id: pins
         run: |
-          node --test test/sources.test.mjs test/guard.test.mjs test/tool-loop.mjs test/research.test.mjs test/store.test.mjs test/migration.test.mjs test/models.test.mjs test/ste.test.mjs
-          node test/smoke.mjs
-          node test/a11y.mjs
+          set -euo pipefail
+          echo "node=$(node scripts/toolchain.mjs --pin node)" >> "$GITHUB_OUTPUT"
+      - name: Set up Node ${{ steps.pins.outputs.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install pinned WABT toolchain
+        run: bash scripts/install-toolchain.sh
+      - name: Install Playwright browser
+        # The required browser class runs Chromium: test/browser/playwright.config.mjs
+        # filters its project list to chromium unless --project is passed, and only
+        # the scheduled cross-browser workflow passes firefox/webkit (installed there).
+        run: npx playwright install --with-deps chromium
+      - name: Record toolchain versions
+        run: npm run toolchain
+      - name: Required gate (build once, all required classes, packaging)
+        # scripts/verify.mjs is the single definition of required test membership:
+        # manifest -> build -> offline -> worker -> browser -> packaging -> lint ->
+        # audit, every step named, all failures reported. Nothing else in this
+        # workflow decides what runs, and nothing rebuilds the site after this.
+        run: npm run verify
+      - name: Verify staged artifact identity (promotion guard)
+        # Re-checks the inventory written by the build against `_site/`: any byte
+        # changed after testing fails here, before anything can be published.
+        run: node scripts/site-inventory.mjs --verify _site
+      - name: Upload Pages artifact (verified _site only)
+        # Re-wraps the unchanged payload into the Pages artifact format;
+        # include-hidden-files keeps `_site/.nojekyll` — part of the verified tree —
+        # inside the artifact, so what is published is what was verified.
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+          include-hidden-files: true
+      - name: Write job summary
+        if: always()
+        env:
+          CI_REPORT_ARTIFACTS: verification-reports,browser-diagnostics
+          CI_SUMMARY_COMMANDS: npm ci --no-audit --no-fund;bash scripts/install-toolchain.sh;npx playwright install --with-deps chromium;npm run verify;node scripts/site-inventory.mjs --verify _site
+        run: npm run ci:summary
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verification-reports
+          path: |
+            artifacts/results/
+            artifacts/site-inventory.json
+          retention-days: 14
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-diagnostics
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy:
+    needs: build-and-test
+    # Verified main pushes only: a PR, fork, Dependabot or manual run on any ref
+    # never reaches this job, and the github-pages environment additionally allows
+    # only the `main` branch to deploy.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # deploy-pages carries its own 10-minute progress timeout; this bounds the two
+    # freshness reads around it.
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read # compare the candidate against the current tip of main
+      pages: write # create the Pages deployment
+      id-token: write # OIDC token the Pages service validates against the environment
+    concurrency:
+      # Publishing is serialized per environment and never cancels an active
+      # publication; a queued duplicate is superseded by the newer run instead.
+      group: github-pages
+      cancel-in-progress: false
+    outputs:
+      deployed: ${{ steps.deploy.outcome == 'success' }}
+      page_url: ${{ steps.deploy.outputs.page_url }}
+      commit: ${{ github.sha }}
+    steps:
+      - name: Freshness gate (candidate must still be the tip of main)
+        # Runs while holding the github-pages group, so the comparison cannot be
+        # raced by another publication. A failed read aborts: publishing without
+        # knowing whether main moved must not happen.
+        id: freshness
+        env:
+          CANDIDATE: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # `Accept: application/vnd.github.sha` returns the commit SHA as plain
+          # text, so no JSON parsing is needed.
+          tip=$(curl -fsS --max-time 30 --retry 3 --retry-delay 2 --retry-connrefused \
+            -H "Accept: application/vnd.github.sha" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API_URL}/repos/${REPOSITORY}/commits/main")
+          echo "candidate=${CANDIDATE} main_tip=${tip}"
+          {
+            echo "### Pages publication"
+            echo ""
+            echo "- candidate commit: \`${CANDIDATE}\` (verified by \`build-and-test\` in this run)"
+            echo "- main tip at publication time: \`${tip}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${tip}" = "${CANDIDATE}" ]; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+            echo "- **superseded — no-op**: \`main\` has advanced to \`${tip}\`, so this run publishes nothing. The newer commit's own verification run publishes it. No deployed release is claimed here." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Deploy verified artifact to GitHub Pages
+        id: deploy
+        if: steps.freshness.outputs.fresh == 'true'
+        # Consumes the `github-pages` artifact uploaded by `build-and-test` in this
+        # run; it never rebuilds or re-uploads the site.
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - name: Record publication state
+        # A commit that arrives while this deployment is active cannot run
+        # concurrently (this job holds the group) and is reported here rather than
+        # cancelling the publication.
+        if: always() && steps.freshness.outputs.fresh == 'true'
+        env:
+          OUTCOME: ${{ steps.deploy.outcome }}
+          PAGE_URL: ${{ steps.deploy.outputs.page_url }}
+          CANDIDATE: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tip=$(curl -fsS --max-time 30 --retry 3 --retry-delay 2 --retry-connrefused \
+            -H "Accept: application/vnd.github.sha" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API_URL}/repos/${REPOSITORY}/commits/main")
+          {
+            echo "- deployment result: \`${OUTCOME}\`"
+            echo "- deployed commit: \`${CANDIDATE}\`"
+            echo "- site URL: ${PAGE_URL:-not reported}"
+            echo "- main tip after publication: \`${tip}\`"
+            if [ "${tip}" != "${CANDIDATE}" ]; then
+              echo "- note: \`main\` advanced to \`${tip}\` during this publication; that commit's own run publishes after this one completes. This deployment is not rolled back — see the rollback procedure in README.md (Operations → Rollback) and docs/ci-campaign-report.md."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  post-deploy-smoke:
+    name: Deployed-site smoke
+    needs: deploy
+    # Only when this run actually published; a superseded no-op run has nothing to
+    # verify and a newer run will verify its own publication.
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read declared toolchain pins
+        id: pins
+        run: |
+          set -euo pipefail
+          echo "node=$(node scripts/toolchain.mjs --pin node)" >> "$GITHUB_OUTPUT"
+      - name: Set up Node ${{ steps.pins.outputs.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+      - name: Download verification reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verification-reports
+          path: artifacts
+      - name: Deployed-site smoke (base path, identity, MIME, boot)
+        # scripts/live-health.mjs is the read-only deployed-site check owned by the
+        # Worker slice; --expect-commit makes it distinguish a stale artifact from a
+        # broken new one. This job holds no production permission, --mode health
+        # leaves the generation probe off (no model call, no credentials), and the
+        # only external reads are the deployed site, the Worker and the public model
+        # catalog.
+        id: smoke
+        env:
+          EXPECT_COMMIT: ${{ needs.deploy.outputs.commit }}
+          BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          GITHUB_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP:-/tmp}/live-health-postdeploy.json"
+          status=0
+          node scripts/live-health.mjs --mode health --expect-commit "$EXPECT_COMMIT" \
+            --base-url "$BASE_URL" --json "$report" || status=$?
+          if [ "$status" -eq 0 ]; then
+            mkdir -p artifacts/results
+            [ -f "$report" ] && cp "$report" artifacts/results/live-health-postdeploy.json
+            echo "result=published" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A newer commit published while this smoke ran: that run owns the
+          # deployed site, so this is an explicit no-op rather than a false failure.
+          tip=$(curl -fsS --max-time 30 --retry 3 --retry-delay 2 --retry-connrefused \
+            -H "Accept: application/vnd.github.sha" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API_URL}/repos/${REPOSITORY}/commits/main")
+          echo "tip=${tip}" >> "$GITHUB_OUTPUT"
+          if [ "${tip}" != "${EXPECT_COMMIT}" ]; then
+            echo "result=superseded-during-smoke" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Deployed-site smoke skipped (superseded)"
+              echo ""
+              echo "\`main\` advanced to \`${tip}\` while the smoke of \`${EXPECT_COMMIT}\` was running; the newer commit's own run owns the deployed site. Nothing is reported as failing here."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mkdir -p artifacts/results
+          [ -f "$report" ] && cp "$report" artifacts/results/live-health-postdeploy.json
+          echo "result=smoke-failed" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      - name: Write job summary
+        if: always()
+        env:
+          DEPLOY_URL: ${{ needs.deploy.outputs.page_url }}
+          DEPLOY_COMMIT: ${{ needs.deploy.outputs.commit }}
+          DEPLOY_RESULT: ${{ steps.smoke.outputs.result || 'smoke-did-not-run' }}
+          DEPLOY_TIP: ${{ steps.smoke.outputs.tip }}
+          CI_REPORT_ARTIFACTS: verification-reports,deployed-site-smoke
+        run: npm run ci:summary
+      - name: Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployed-site-smoke
+          path: |
+            artifacts/results/live-health-postdeploy.json
+            artifacts/results/summary.json
+          if-no-files-found: ignore
+          retention-days: 7

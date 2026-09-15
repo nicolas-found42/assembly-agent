@@ -27,10 +27,13 @@ answer.
 ## Quick start
 
 ```bash
-./build.sh              # wat2wasm src/agent.wat -o dist/agent.wasm  (needs `wabt`)
-python3 -m http.server 8000
-# open http://localhost:8000
+npm ci                # install the lockfile-pinned dependencies
+npm run build         # compile src/agent.wat, stage the immutable _site/ artifact
+npm run serve         # serve _site/ at /assembly-agent/; prints the URL to open
 ```
+
+`npm run serve` prints one `READY http://127.0.0.1:<port>/assembly-agent/` line —
+open that URL. It never reuses a port another process holds.
 
 1. The first chat starts with the built-in assistant and the automatic model
    ("Automatic — newest free"). Free models run without a key through the proxy.
@@ -39,8 +42,11 @@ python3 -m http.server 8000
 3. Type a question and press **ENTER**. The assistant searches the web first,
    then writes the answer and shows the sources below it.
 
-No install beyond `wabt`. The site is static. `dist/agent.wasm` is the only build
-artifact.
+The site is static. `_site/` is the only deployment artifact, and
+`dist/agent.wasm` (the compiled engine) is the only file the build compiles.
+Version pins live in `scripts/toolchain.mjs`; `scripts/install-toolchain.sh`
+installs the pinned WABT release with a verified checksum, and a system WABT
+(`brew install wabt`) works too.
 
 ## Features
 
@@ -116,33 +122,189 @@ src/agent.wat       # hand-written engine (SSE scanner, history arena, catalog)
 dist/agent.wasm     # build output (wat2wasm)
 worker/api-chat.js  # free-model proxy (Cloudflare Worker)
 wrangler.toml       # proxy deploy config
+scripts/            # build, serve, gate, runner, toolchain, lint, audit, deploy helpers
+test/               # suites; membership is declared in test/manifest.json
+.github/workflows/  # required gate, scheduled checks, publishers
 ```
 
-## Testing
+## Develop and test
+
+`npm run verify` is the one required command. It stages the site, runs every
+required test class, re-checks the staged artifact, then lints and audits. The
+step list lives in `scripts/verify.mjs` — `--list` prints it, and `--only <step>`
+runs one step to reproduce a CI failure locally.
+
+| Command | What it does |
+| --- | --- |
+| `npm run build` | stages the allowlisted production tree into `_site/` and writes `artifacts/site-inventory.json`; the allowlist, budgets and post-stage validation are in `scripts/build-site.sh` |
+| `npm run serve` | serves `_site/` at `/assembly-agent/`; prints `READY <url>`, refuses a taken port |
+| `npm run verify` | the required gate: manifest → toolchain → build → offline → worker → browser → packaging → deps → lint → audit → sentinel |
+| `npm run test:offline` | required class: the `node --test` files and engine scripts |
+| `npm run test:worker` | required class: the Worker suite in real workerd |
+| `npm run test:browser` | required class: the Playwright suite over `_site/`, chromium |
+| `npm run test:cross-browser` | scheduled class: the same browser suite on firefox + webkit |
+| `npm run test:live` | operational probes; never part of the required gate |
+| `npm run lint` | pinned actionlint + zizmor + shellcheck, workflow invariants, js/shell/html checks |
+| `npm run audit` | vulnerability policy (`scripts/audit-policy.mjs`; exceptions and their owners in `scripts/audit-policy.exceptions.json`) |
+| `npm run check:deps` | lockfile ↔ `node_modules` ↔ vendored bytes ↔ staged site agreement |
+| `npm run toolchain` | the declared pins against the versions actually resolved |
+
+Test membership is declared once, in `test/manifest.json`: the workflow YAML lists
+no test files, and `scripts/validate-manifest.mjs` fails when a runnable file under
+`test/` is unlisted. Each entry names a class (`offline`, `worker`, `browser`,
+`scheduled-browser`, `live`) and an adapter, and the runner refuses `.only`,
+`.skip`, `.todo` and retry-only passes in the required classes. Every class writes
+`artifacts/results/<class>.json`; `npm run ci:summary` turns those (plus the
+Playwright JSON report) into the CI job summary.
+
+The browser suite runs against the staged `_site/` and fails before the first test
+when the artifact is missing or stale. The Worker and every external origin are
+served by `test/browser/fixture-server.mjs`, so it needs no key and no network; its
+two local servers use ports 4319/4320 (`SITE_PORT`/`FIXTURE_PORT` override them).
+The old manual `test/a11y.browser.mjs` harness is superseded — it sits in the
+`live` class and never enters the required gate.
+
+### Reproducing a CI failure
+
+An engine stream failure prints its own replay line; this is that command:
 
 ```bash
-./build.sh
-node --test test/sources.test.mjs test/guard.test.mjs test/tool-loop.mjs test/research.test.mjs test/store.test.mjs test/migration.test.mjs test/models.test.mjs test/ste.test.mjs
-node test/smoke.mjs   # engine smoke: MAGIC, heap, history, TLV, SSE, tool pending
-node test/a11y.mjs    # static a11y contract (WCAG 2.2 AA done-bar)
+STREAMS_SEED=20260914 STREAMS_CHILD=property STREAMS_REPLAY=tool-parallel:rand-3 \
+  node test/streams.test.mjs
 ```
 
-`test/a11y.browser.mjs` is the manual browser harness (needs puppeteer and
-axe-core). CI (`.github/workflows/ci.yml`) and the Pages deploy run the eight
-`node --test` files plus `smoke.mjs` and `a11y.mjs`.
+A failed browser run leaves the Playwright JSON report at
+`artifacts/results/browser-playwright.json`
+(`scheduled-browser-playwright.json` for the cross-browser class) and traces and
+screenshots under `test-results/browser/` (`trace: retain-on-failure`,
+`screenshot: only-on-failure`); in CI download the `browser-diagnostics` (or
+`cross-browser-failure-artifacts`) artifact. Open a trace with:
+
+```bash
+npx playwright show-trace test-results/browser/<failed-test>/trace.zip
+```
+
+Visual baselines live next to the spec in
+`test/browser/__snapshots__/visual.spec.mjs/`, per project and platform. CI never
+writes them; review every changed PNG, then update them deliberately:
+
+```bash
+npm run test:update-snapshots   # npx playwright test --config test/browser/playwright.config.mjs --update-snapshots
+```
+
+The Worker runs locally under the same runtime it deploys to. The runtime tests use
+a mock upstream and no key; the packaging dry run needs no Cloudflare credentials:
+
+```bash
+npm run test:worker        # vitest + @cloudflare/vitest-pool-workers, real workerd
+npm run worker:package     # wrangler deploy --dry-run; records the bundle identity
+npx wrangler dev           # optional local server (the operator key is needed to serve model requests)
+```
+
+## Operations
+
+**Required check.** `main` requires exactly one status context: `build-and-test`,
+the job id in `.github/workflows/ci.yml` — deliberately no `name:` override, so the
+context cannot drift; `npm run lint` fails if it does. That job runs `npm run
+verify` and then the artifact-identity re-check. CodeQL also runs on pull requests,
+but it is not a required context. The `deploy` job publishes only a verified push to
+`main`; `post-deploy-smoke` then verifies what was published.
+
+**Optional scheduled checks.** `.github/workflows/cross-browser.yml` (firefox +
+webkit) runs daily at 07:23 UTC and `.github/workflows/live-health.yml` at 06:17
+UTC; CodeQL scans weekly. All three are signals, never PR gates, and all three can
+also be dispatched by hand. `npm run live:health` runs the same read-only checks
+locally (`--expect-commit <sha>` separates a stale artifact from a broken new one).
+
+**Secrets and variables.**
+
+| Name | Kind | Where it lives |
+| --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | environment secrets | `cloudflare-worker` (protected environment) |
+| `ENABLE_WORKER_DEPLOY` | repository variable | `true` opts the manual Worker deployment in; unset means the workflow is a no-op |
+| `LIVE_HEALTH_ENABLE_GENERATION` | repository variable | opts the budgeted live generation probe in |
+| `LIVE_HEALTH_MAX_{REQUESTS,TOKENS,DURATION_MS,CONCURRENCY}` | repository variables | lower the probe budget; the hard ceilings are in `scripts/live-health.mjs` |
+| `OPENROUTER_KEY` | Worker secret | Cloudflare: `npx wrangler secret put OPENROUTER_KEY`; `wrangler.toml` declares it required |
+
+The required gate and the Pages publisher need no repository secret: they use the
+per-run `GITHUB_TOKEN` (read-only outside the deploy job) and an OIDC token for
+Pages. Environments: `github-pages` is live and allows only `main`;
+`cloudflare-worker` exists with a `main`-only branch policy and a required reviewer,
+and stays inert until its secrets and `ENABLE_WORKER_DEPLOY` are set (see activation
+below).
+
+**Artifact identity and promotion.** `_site/` is staged once, by `npm run build`,
+and is immutable: nothing adds files to it afterwards, and no deployment job builds
+or injects metadata. `artifacts/site-inventory.json` records a sha256 per staged
+file plus one `treeDigest` over the sorted list; `_site/build-info.json` records the
+commit, the WASM and lockfile digests and the dependency versions. The promotion
+guard is `node scripts/site-inventory.mjs --verify _site`, re-run after the tests —
+a byte changed after testing fails the run before anything can be published.
+
+**Retention.** 14 days: `verification-reports`, `cross-browser-reports`. 7 days:
+`browser-diagnostics`, `deployed-site-smoke`. 30 days: `live-health-report`,
+`live-health-incident`. 90 days: `worker-deploy-record`. CodeQL uploads SARIF to
+code scanning instead of an artifact.
+
+**Incidents.** `npm run incident:report` (`scripts/incident.mjs`) keeps at most one
+open issue per (service, failure class), updates it while the failure persists, and
+comments on and closes it on recovery. It is a no-op with a printed explanation
+unless reporting is enabled and the token has push permission. Only the live-health
+`report-incident` job has `issues: write`, and only sanitised data is stored.
+
+**Deployment order.** Pages and the Worker are independent publishers: pushing
+`main` never releases the Worker, and the Worker workflow never touches Pages. When
+a change needs both, publish Pages first — the Worker is additive, while the
+frontend depends on the Worker's current error shapes.
+
+**Rollback.** Pages: revert the bad commit on `main`; the normal pipeline rebuilds,
+re-verifies and publishes it, and a run whose commit is no longer the tip of `main`
+publishes nothing (the freshness gate). In an emergency an administrator can
+re-deploy a previously verified artifact through the Pages API and record it in the
+deployment history. Worker: `npx wrangler versions deploy <previous-version-id>@100
+--yes`, with each run's version id recorded in `artifacts/results/worker-deploy.json`.
+Neither path rolls back automatically.
+
+**Owner-only activation still pending.** These are repository and Cloudflare
+settings, not code; until they exist the related workflow stays a no-op:
+
+- environment secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts: edit) and
+  `CLOUDFLARE_ACCOUNT_ID` on the `cloudflare-worker` environment (the environment
+  itself now exists with a `main`-only branch policy and a required reviewer);
+- repository variable `ENABLE_WORKER_DEPLOY=true`;
+- Worker secret `OPENROUTER_KEY` on the deployed Worker;
+- optional: `LIVE_HEALTH_ENABLE_GENERATION` and its budget variables, and custom
+  Worker routes.
+
+`bash scripts/settings-apply.sh` reports (and with `--apply`, sets) the
+administrator settings this contract depends on — Action SHA pinning, the default
+`GITHUB_TOKEN` scope, Dependabot security updates, CodeQL default setup staying off,
+the required-check context, the `github-pages` branch policy and each
+`cloudflare-worker` prerequisite by name. A denied read is reported as "not
+verified", never as "absent".
+
+The verification campaign's status, evidence and activation record is
+[`docs/ci-campaign-report.md`](docs/ci-campaign-report.md).
 
 ## Notes
 
-- **Deploy** — GitHub Pages serves the repository root as a static site
-  (`.github/workflows/deploy.yml`). There is no build step on the host and no
-  server-side application.
+- **Deploy** — GitHub Pages publishes the verified `_site/` artifact from the
+  `deploy` job in `.github/workflows/ci.yml`, for main pushes only. There is no
+  server-side application; the site is static.
 - **Free proxy** — the Cloudflare Worker in `worker/api-chat.js` forwards
   `:free` model requests to OpenRouter with the Operator Key. It refuses every
-  other model (`403 NOT_FREE`). The key is set with
+  other model (`403 NOT_FREE`), and it refuses a request whose routing fields it
+  cannot prove are free-only: `route` is rejected outright, and a `models`
+  fallback list is accepted only when every entry is `:free`. The upstream body is
+  built from a reviewed allowlist (`model`, `messages`, `stream`, `tools`, and the
+  all-free `models`) rather than forwarded verbatim, so a request-shaping field
+  this repository has not reviewed — OpenRouter bills some of them, such as the
+  `web` plugin — cannot spend the Operator Key. The key is set with
   `wrangler secret put OPENROUTER_KEY`. The Worker allows the GitHub Pages
   origin, `*.pages.dev`, and localhost. See
   `docs/adr/0001-proxy-for-free-models.md`.
 - **Paid models** — your own OpenRouter key, read before every request round. A
   key that is changed or removed stops the turn with an honest message.
-- **Docs** — product decisions live in `docs/adr/`. The glossary is
-  `CONTEXT.md`. CI and deploy run the node-safe suites listed above.
+- **Docs** — product and release decisions live in `docs/adr/` (ADR 0013 and
+  ADR 0014 define the verification and deployment contract). The glossary is
+  `CONTEXT.md`.

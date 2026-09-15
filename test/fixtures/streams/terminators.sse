@@ -1,0 +1,7 @@
+data: {"choices":[{"delta":{"content":"crlf"}}]}
+data:{"choices":[{"delta":{"content":"nospace"}}]}
+: synthetic keep-alive comment
+event: ping
+
+data: {"choices":[{"delta":{"content":"lf"}}]}
+data: [DONE]

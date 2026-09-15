@@ -1,0 +1,4 @@
+data: {"choices":[{"delta":{"content":"a \"q\" b\\\\ c\/d \n \t \b \f \r"}}]}
+data: {"choices":[{"delta":{"content":"\u00e9\u6f22\ud83d\ude00"}}]}
+data: {"choices":[{"delta":{"content":"truncated \u12"}}]}
+data: [DONE]

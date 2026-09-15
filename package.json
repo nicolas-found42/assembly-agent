@@ -1,0 +1,51 @@
+{
+  "name": "assembly-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ASM::AGENT — amber CRT chat agent (static site + WAT engine + free-model proxy)",
+  "scripts": {
+    "build": "bash scripts/build-site.sh",
+    "build:wasm": "wat2wasm src/agent.wat -o dist/agent.wasm",
+    "serve": "node scripts/serve-site.mjs",
+    "verify": "node scripts/verify.mjs",
+    "test": "node scripts/run-tests.mjs --class offline",
+    "test:offline": "node scripts/run-tests.mjs --class offline",
+    "test:worker": "node scripts/run-tests.mjs --class worker",
+    "test:browser": "node scripts/run-tests.mjs --class browser",
+    "test:worker-unit": "npx vitest run --config test/worker/vitest.config.mjs",
+    "test:cross-browser": "node scripts/run-tests.mjs --class scheduled-browser",
+    "test:live": "node scripts/run-tests.mjs --class live",
+    "test:update-snapshots": "npx playwright test --config test/browser/playwright.config.mjs --update-snapshots",
+    "manifest:check": "node scripts/validate-manifest.mjs",
+    "toolchain": "node scripts/toolchain.mjs",
+    "ci:summary": "node scripts/ci-summary.mjs",
+    "check:deps": "node scripts/check-deps.mjs",
+    "lint": "bash scripts/lint.sh",
+    "audit": "node scripts/audit-policy.mjs",
+    "worker:package": "node scripts/worker-package.mjs",
+    "worker:deploy": "bash scripts/worker-deploy.sh",
+    "live:health": "node scripts/live-health.mjs",
+    "incident:report": "node scripts/incident.mjs"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/vt323": "^5.3.0",
+    "@highlightjs/cdn-assets": "^11.12.0",
+    "dompurify": "^3.4.15",
+    "marked": "^18.0.13"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@playwright/test": "^1.63.0",
+    "axe-core": "^4.13.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.131.2",
+    "yaml": "^2.8.3"
+  },
+  "allowScripts": {
+    "workerd@1.20260815.1": true,
+    "workerd@1.20260911.1": true
+  }
+}

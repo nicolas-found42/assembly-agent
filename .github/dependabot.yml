@@ -1,6 +1,9 @@
 version: 2
 updates:
-  # Only dependency surface in this repo: pinned GitHub Actions.
+  # ── GitHub Actions ──────────────────────────────────────────────────────
+  # Every Action is pinned to a full commit SHA with a version comment, so the
+  # SHA bump and its comment must be reviewed together: one group keeps the whole
+  # Actions surface in a single, reviewable pull request.
   # `cron` interval runs every day; `daily` would skip weekends.
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -8,3 +11,39 @@ updates:
       interval: "cron"
       cronjob: "0 4 * * *"
       timezone: "America/New_York"
+    groups:
+      github-actions:
+        applies-to: "version-updates"
+        patterns: ["*"]
+
+  # ── npm ─────────────────────────────────────────────────────────────────
+  # The runtime surface is exactly the packages staged into _site/ by
+  # scripts/build-site.sh and re-verified byte-for-byte by
+  # scripts/check-deps.mjs; everything else is the test/lint toolchain. They are
+  # grouped separately because a runtime library bump changes shipped bytes and
+  # deserves its own review, while toolchain bumps do not reach the artifact.
+  #
+  # Both groups are limited to minor and patch updates: a semver-major bump is
+  # exactly the change a reviewer must look at on its own, so those arrive as
+  # individual pull requests instead of being buried in a group.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 * * *"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    groups:
+      npm-runtime:
+        applies-to: "version-updates"
+        dependency-type: "production"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      npm-dev:
+        applies-to: "version-updates"
+        dependency-type: "development"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

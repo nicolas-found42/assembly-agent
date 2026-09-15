@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "note": "Reviewed moderate/minor axe findings per scan (tags wcag2a/2aa/21a/21aa/22aa). A scan may not add ids; fix the finding or review it and record it here.",
+  "scans": {
+    "main": {
+      "moderate": [],
+      "minor": []
+    },
+    "chats": {
+      "moderate": [],
+      "minor": []
+    },
+    "assistants": {
+      "moderate": [],
+      "minor": []
+    },
+    "model": {
+      "moderate": [],
+      "minor": []
+    },
+    "settings": {
+      "moderate": [],
+      "minor": []
+    }
+  }
+}

@@ -1,0 +1,5 @@
+data: {"choices":[{"delta":{"content":"searching…"}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"syn_a","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"first\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"syn_b","type":"function","function":{"name":"lookup","arguments":"{\"query\": \"second\"}"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":2,"id":"syn_c","type":"function","function":{"name":"fetch_page","arguments":"{\"url\": \"/synthetic/page?x=1\"}"}}]}}]}
+data: [DONE]

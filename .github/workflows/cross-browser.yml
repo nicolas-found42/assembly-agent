@@ -1,0 +1,93 @@
+name: Cross-browser
+
+# Trusted, non-gating workflow: the required check is `build-and-test` on
+# chromium (ci.yml). This one runs the SAME browser suite on firefox + webkit
+# (scripts/run-tests.mjs --class scheduled-browser appends the two --project
+# flags) where a failure is a signal, never a PR gate.
+#
+# It runs on the default branch only — scheduled workflows always do — and can be
+# dispatched by hand from the Actions tab. No pull_request trigger: a fork or a
+# Dependabot branch must not gain a browser-engineering signal here.
+
+on:
+  schedule:
+    # Deliberately off the hour: GitHub delays or drops scheduled runs queued at
+    # round times, so this is 07:23 UTC, not 07:00.
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per ref: a scheduled run superseded by a newer one for the same branch
+# has no reporting value, and this workflow gates nothing.
+concurrency:
+  group: cross-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-browser:
+    name: firefox + webkit
+    # Pinned, not `ubuntu-latest`: the visual baselines under test are keyed per
+    # platform, and a floating label can move to the next LTS image and invalidate
+    # them. scripts/toolchain.mjs declares this image as the project's runner.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here needs the token after checkout; never leave it in .git/config.
+          persist-credentials: false
+
+      - name: Read declared toolchain pins
+        # scripts/toolchain.mjs is the single declaration of the Node release; the
+        # scheduled suite must run on the same Node as the required gate.
+        id: pins
+        run: |
+          set -euo pipefail
+          echo "node=$(node scripts/toolchain.mjs --pin node)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+          cache: npm
+
+      # wat2wasm + wasm-validate, from the pinned WABT release with a verified
+      # digest; the job cannot build the staged site without them.
+      - name: Install pinned build toolchain
+        run: bash scripts/install-toolchain.sh
+
+      - run: npm ci
+
+      - name: Install firefox and webkit
+        run: npx playwright install --with-deps firefox webkit
+
+      - name: Build the staged site
+        run: npm run build
+
+      - name: Cross-browser suite (firefox + webkit)
+        run: npm run test:cross-browser
+
+      # The runner's own result JSON plus the Playwright report: kept on every
+      # outcome, because a passing run's timings are as useful as a failure's.
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cross-browser-reports
+          path: |
+            artifacts/results/scheduled-browser.json
+            artifacts/results/scheduled-browser-playwright.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Traces/screenshots from the first failing attempt (playwright.config.mjs
+      # use.trace / use.screenshot), only when there is something to debug.
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cross-browser-failure-artifacts
+          path: test-results/browser
+          if-no-files-found: ignore
+          retention-days: 14

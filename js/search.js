@@ -555,6 +555,12 @@ async function jinaHelper(q, tag, target, sig, transport, limiter, fresh) {
     text = await cachedText(url, sig, transport, fresh);
   }
   const snippet = String(text).slice(0, 800);
+  // r.jina.ai answers 200 with an empty body when the reader extracts nothing
+  // (blocked target, empty result page, limiter page). A block built from that
+  // still counts as a Source in the answer footer while carrying no evidence,
+  // and it makes the documented "no search results" state unreachable. Skip it
+  // like every other Source that found nothing.
+  if (!snippet.trim()) return '';
   const title = tag === 'JINA NEWS' ? `news for ${q.slice(0,60)}` : `web results for ${q.slice(0,60)}`;
   return fmt(tag, title, target, snippet + '\n— via Jina Reader');
 }
