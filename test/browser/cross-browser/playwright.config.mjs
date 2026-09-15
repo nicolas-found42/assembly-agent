@@ -27,6 +27,13 @@ const root = path.join(here, '..', '..', '..');
 export default {
   ...base,
   testDir: path.join(here, '..'),
+  // Visual pinning stays chromium-only. A baseline is only meaningful for the
+  // machine that runs it, and the chromium set is rendered on the pinned runner
+  // (and locally on darwin); pixel-pinning two more engines would add baselines
+  // nobody can regenerate from the runner and a first failure mode that says
+  // "rasteriser" rather than "regression". The functional and accessibility
+  // journeys — the reason this class exists — still run on all three engines.
+  testIgnore: ['**/visual.spec.mjs'],
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },

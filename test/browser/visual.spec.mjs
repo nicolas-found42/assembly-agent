@@ -5,6 +5,22 @@
 // test:update-snapshots` is an explicit local command and no workflow invokes
 // it, so a pixel change fails the run instead of blessing itself.
 //
+// Chromium only. The required `browser` class runs the chromium project and the
+// cross-browser config excludes this file, because a baseline is only meaningful
+// for the machine that renders it — see "platform" below.
+//
+// Platform. Baselines are keyed darwin and linux. The darwin set is rendered on
+// a developer machine; the linux set is rendered on the pinned ubuntu-24.04
+// runner and CANNOT be reproduced locally — the same woff2 bytes rasterise
+// ~1 px differently under the container's font stack (measured: differences are
+// confined to 13-px text bands, never to layout or content). A local
+// `test:update-snapshots` therefore rewrites the darwin set only; regenerating
+// linux means taking the `*-actual.png` files from a failing `build-and-test`
+// run's `browser-diagnostics` artifact and copying them over the corresponding
+// `-chromium-linux.png` baselines. Without this branch the two sets disagree at
+// every text row and the required check would fail for a reason that is not a
+// regression.
+//
 // Determinism (each line removes a real source of drift, none of them by
 // removing product behaviour):
 //   * viewport — fixed at the config's Desktop Chrome size; the mobile test

@@ -162,6 +162,13 @@ function parseSummary(output) {
   return summary;
 }
 
+/**
+ * SGR/CSI escape sequences as produced by vitest, playwright and workerd.
+ * Written with String.fromCharCode so the source file stays plain ASCII.
+ */
+const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, 'g');
+const stripAnsi = (text) => text.replace(ANSI_RE, '');
+
 function retryHits(output) {
   const hits = [];
   for (const { label, re } of RETRY_PATTERNS) {
@@ -253,7 +260,13 @@ function runEntry(entry, cls, timeout) {
   });
   result.ms = Number((process.hrtime.bigint() - started) / 1_000_000n);
   const timedOut = Boolean(res.error && res.error.code === 'ETIMEDOUT');
-  const output = `${res.stdout ?? ''}${res.stderr ?? ''}`;
+  // Reporters colour their summary when the environment allows it, and whether
+  // they do is not ours to decide: vitest emits SGR sequences in CI while a
+  // developer shell with NO_COLOR set sees plain text. Strip them once here so
+  // every downstream read (summary parsing, retry detection, printed output,
+  // the sentinel scan) sees the same bytes in both places. A summary that only
+  // parses when the terminal is plain is not a summary we can gate on.
+  const output = stripAnsi(`${res.stdout ?? ''}${res.stderr ?? ''}`);
   result.exit = res.status;
   result.output = output;
 
