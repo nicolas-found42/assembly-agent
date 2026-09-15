@@ -128,11 +128,12 @@ const RICH_ANSWER = [
 
 test('@security a streamed answer renders prose, links, a long code block and COPY', async ({ page, browserName }) => {
   const app = await bootApp(page);
-  // Clipboard *read-back* needs permissions Playwright only grants on Chromium
-  // (`grantPermissions` rejects `clipboard-read`/`clipboard-write` elsewhere), so
-  // the clipboard content is asserted where the API is controllable and the
-  // control's observable contract is asserted everywhere. Same claim, engine
-  // branch stated rather than a silent skip.
+  // Only the real clipboard *read-back* is Chromium-only (`grantPermissions`
+  // rejects clipboard-read/write elsewhere), so that one assertion is gated on
+  // the engine. The write itself is asserted on every engine by capturing the
+  // exact string handed to navigator.clipboard.writeText — a stronger claim
+  // than a marshalled round trip, and it is what makes the branch below honest
+  // rather than a silent skip.
   const canReadClipboard = browserName === 'chromium';
   if (canReadClipboard) await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   const { settled } = await streamAnswer(app, page, RICH_ANSWER, 'Render the release notes');

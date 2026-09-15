@@ -111,7 +111,8 @@
       "kind": "suite",
       "class": "scheduled-browser",
       "run": "playwright",
-      "note": "Same suite as test/browser/, declaring chromium+firefox+webkit for the scheduled/manual cross-browser workflow; the required class runs chromium only."
+      "timeout": 600000,
+      "note": "Same suite as test/browser/, declaring chromium+firefox+webkit for the scheduled/manual cross-browser workflow; the required class runs chromium only. timeout is explicit: the two engines take 4-5 minutes here and sit far too close to the 300 s default, which turned the class into a timing flake."
     },
     {
       "path": "test/worker/",

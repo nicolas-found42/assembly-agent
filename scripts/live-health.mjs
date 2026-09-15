@@ -337,13 +337,16 @@ async function generationProbe(args, limits, checks) {
   let status = 0;
   let abortReason = null;
   try {
+    // Counted at send, not at response: a probe aborted by the duration budget
+    // still issued its one request, and the budget line must not report 0/1 for
+    // a request that left the building.
+    budget.requests.used = 1;
     const res = await fetch(`${args.workerUrl.replace(/\/+$/, '')}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ model: model.id, messages: [{ role: 'user', content: PROBE_PROMPT }], max_tokens: limits.tokens, stream: true }),
       signal: AbortSignal.timeout(limits.durationMs),
     });
-    budget.requests.used = 1;
     status = res.status;
     if (res.status === 200 && res.body) {
       const reader = res.body.getReader();
