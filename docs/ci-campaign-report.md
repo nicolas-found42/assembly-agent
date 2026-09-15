@@ -271,19 +271,22 @@ Residual risks:
 - **The vitest 5 upgrade is deferred, and cannot yet land (Dependabot `#49`).**
   `@cloudflare/vitest-pool-workers` — latest published release `0.22.0`, which is
   what this repository uses — peers `vitest ^4.1.0`, `@vitest/runner ^4.1.0` and
-  `@vitest/snapshot ^4.1.0`; vitest 5 inlines its runner and is no longer
-  published as `@vitest/runner`, so there is no version of the second peer that
-  could satisfy a vitest 5 tree at all. The worker class is a required class whose
-  evidence comes from running inside the real workerd runtime *through that pool*
-  (R09), so the bump has no supported landing: `npm ci` on `#49` fails with
-  `ERESOLVE` on a hosted runner (`34989651920`), and `--force`/`legacy-peer-deps`
-  would only test an unsupported peer combination with a mismatched runner
-  implementation. vitest stays on `^4.1.0` until the pool publishes vitest 5
-  support, or until the worker class is moved onto a different workerd harness —
-  a change that would give up the pool's current-runtime property and is not part
-  of this campaign. The two interfaces that would have to change besides the
-  peers were checked rather than assumed: `scripts/run-tests.mjs` gates on the
-  reporter's `Tests  N passed (N)` block, and vitest 5.0.0 emits that block
+  `@vitest/snapshot ^4.1.0`. The first range is the install blocker: vitest 5.0.0
+  falls outside it, so `npm ci` refuses the tree before a single test runs. Behind
+  it sits the structural one: vitest 5 inlines its runner, so `@vitest/runner` is
+  published only up to 4.1.11 — a vitest 5 tree could carry nothing but that 4.x
+  copy beside vitest 5's own inlined runner, which is the mismatched pairing the
+  required worker class cannot afford. That class draws its evidence from running
+  inside the real workerd runtime *through that pool* (R09), so the bump has no
+  supported landing: `npm ci` on `#49` fails with `ERESOLVE` on a hosted runner
+  (`34989651920`), and `--force`/`legacy-peer-deps` would buy that unsupported
+  combination rather than an upgrade. vitest stays on `^4.1.0` until the pool
+  publishes vitest 5 support, or until the worker class is moved onto a different
+  workerd harness — a change that would give up the pool's current-runtime
+  property and is not part of this campaign. The two interfaces that would have to
+  change besides the peers were checked rather than assumed:
+  `scripts/run-tests.mjs` gates on the reporter's `Tests  N passed (N)` block, and
+  vitest 5.0.0 emits that block
   unchanged for the same suite (identical counts, `disableConsoleIntercept` still
   honoured; only the `Duration` breakdown's wording differs, which the runner
   never reads), and the worker suite touches none of the APIs vitest 5 removes or
